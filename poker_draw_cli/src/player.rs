@@ -2,6 +2,7 @@ use crate::hand::Hand;
 
 #[derive(Clone)]
 pub struct Player {
+    #[allow(dead_code)]
     pub id: usize,
     pub name: String,
     pub chips: u32,

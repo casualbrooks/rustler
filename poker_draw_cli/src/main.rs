@@ -10,9 +10,12 @@ use timer::read_line_timeout;
 
 fn prompt_number(prompt: &str, min: u32, max: u32, step: Option<u32>) -> u32 {
     loop {
-        println!("{prompt} [{min}..{max}{}]:",
-            if let Some(s) = step { format!(", step {}", s) } else { "".to_string() }
-        );
+        let step_str = match step {
+            Some(s) => format!(", step {}", s),
+            None => String::new(),
+        };
+        println!("{} [{}..{}{}]:", prompt, min, max, step_str);
+
         if let Some(line) = read_line_timeout("> ", 0) { // 0 = no timeout for setup
             if let Ok(val) = line.trim().parse::<u32>() {
                 if val >= min && val <= max && step.map_or(true, |s| val % s == 0) {
@@ -30,12 +33,13 @@ fn main() {
     loop {
         let num_players = prompt_number("Number of players", 2, 6, None);
         let starting_chips = prompt_number("Starting chips (increments of 10)", 10, 10_000, Some(10));
+        let turn_secs = prompt_number("Turn timer (seconds)", 5, 300, None) as u64;
 
         let settings = GameSettings {
             num_players: num_players as usize,
             starting_chips,
             bet_increment: 5,
-            turn_timeout_secs: 15,
+            turn_timeout_secs: turn_secs,
             max_discards: 3, // common variant
         };
 
@@ -47,12 +51,7 @@ fn main() {
 
         println!("Start a new game with same settings? [y/N]");
         let again = read_line_timeout("> ", 0).unwrap_or_default();
-
-
-
-
-
-}    }        }            break;        if again.trim().to_lowercase() != "y" {        if again.trim().to_lowercase() != "y" {
+        if again.trim().to_lowercase() != "y" {
             break;
         }
     }

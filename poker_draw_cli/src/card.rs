@@ -1,5 +1,4 @@
 use std::fmt;
-use rand::{seq::SliceRandom, thread_rng};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Suit { Clubs, Diamonds, Hearts, Spades }
@@ -31,32 +30,11 @@ impl fmt::Display for Card {
             Rank::Ace => "A",
         };
         let s = match self.suit {
-            Suit::Clubs => "♣", Suit::Diamonds => "♦", Suit::Hearts => "♥", Suit::Spades => "♠"
+            Suit::Clubs => 'C',
+            Suit::Diamonds => 'D',
+            Suit::Hearts => 'H',
+            Suit::Spades => 'S',
         };
         write!(f, "{}{}", r, s)
-    }
-}
-
-#[derive(Clone)]
-pub struct Deck {
-    cards: Vec<Card>,
-}
-
-impl Deck {
-    pub fn new_shuffled() -> Self {
-        let mut cards = Vec::with_capacity(52);
-        let suits = [Suit::Clubs, Suit::Diamonds, Suit::Hearts, Suit::Spades];
-        for s in suits {
-            for r in Rank::ALL {
-                cards.push(Card { rank: r, suit: s });
-            }
-        }
-        let mut rng = thread_rng();
-        cards.shuffle(&mut rng);
-        Self { cards }
-    }
-
-    pub fn deal(&mut self) -> Option<Card> {
-        self.cards.pop()
     }
 }

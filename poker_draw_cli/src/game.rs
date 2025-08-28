@@ -1,7 +1,8 @@
 use std::cmp::Ordering;
+use std::process;
 
 use crate::deck::Deck;
-use crate::hand::{self, Hand};
+use crate::hand;
 use crate::player::Player;
 use crate::timer::read_line_timeout;
 
@@ -167,9 +168,9 @@ impl Game {
         let mut idx = 0usize;
         let mut seen_since_raise: Vec<bool> = vec![false; self.players.len()];
 
-        // betting continues until all players have matched the bet or folded, and the last raiser has been seen
         loop {
             let pid = order[idx];
+
             let can_continue = self.players.iter().enumerate()
                 .any(|(i,p)| order.contains(&i) && !p.folded && !p.all_in && (p.contributed_this_round < current_bet));
             let need_more = if let Some(lr) = last_raiser { !seen_since_raise[lr] } else { false };
@@ -180,18 +181,18 @@ impl Game {
                 break;
             }
 
-            let p = &self.players[pid];
-            if p.folded || p.all_in || p.chips == 0 {
+            let folded = self.players[pid].folded;
+            let all_in = self.players[pid].all_in;
+            let chips_zero = self.players[pid].chips == 0;
+
+            if folded || all_in || chips_zero {
                 seen_since_raise[pid] = true;
                 idx = (idx + 1) % order.len();
                 continue;
             }
 
-            // show state
-            let (call_diff, max_raise) = (
-                current_bet.saturating_sub(self.players[pid].contributed_this_round),
-                p.chips
-            );
+            let call_diff = current_bet.saturating_sub(self.players[pid].contributed_this_round);
+            let chips = self.players[pid].chips;
 
             println!();
             println!("Pot: {}", pot + self.players.iter().map(|pl| pl.contributed_this_round).sum::<u32>());
@@ -201,11 +202,25 @@ impl Game {
             }
             let hand_str = self.players[pid].hand.as_ref().map(|h| h.fmt_inline()).unwrap_or_default();
             println!("{} to act. Hand: [{}]. You have {} seconds.", self.players[pid].name, hand_str, self.settings.turn_timeout_secs);
-            println!("Allowed: {}", if current_bet == self.players[pid].contributed_this_round { "check, bet <amount>, fold" } else { "call, raise <amount>, fold, all-in" });
+            println!("Allowed: {}  | Type 'quit' to exit.",
+                if current_bet == self.players[pid].contributed_this_round { "check, bet <amount>, fold" } else { "call, raise <amount>, fold, all-in" }
+            );
             let prompt = format!("(call {} chips) > ", call_diff);
 
             let line = read_line_timeout(&prompt, self.settings.turn_timeout_secs).unwrap_or_default();
             let action = line.trim().to_lowercase();
+
+            // quit/exit command with confirmation
+            if action == "quit" || action == "exit" {
+                println!("Are you sure you want to quit? [y/N]");
+                let ans = read_line_timeout("> ", 0).unwrap_or_default();
+                if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
+                    process::exit(0);
+                } else {
+                    println!("Continuing game.");
+                    continue; // same player still to act
+                }
+            }
 
             let mut fold = false;
             let mut check = false;
@@ -236,7 +251,6 @@ impl Game {
                 fold = true;
             }
 
-            let chips = self.players[pid].chips;
             let inc = self.settings.bet_increment;
 
             if fold {
@@ -246,7 +260,7 @@ impl Game {
                 println!("{} checks.", self.players[pid].name);
             } else if call {
                 let mut need = call_diff;
-                if need > chips { need = chips; }
+                if need > self.players[pid].chips { need = self.players[pid].chips; }
                 self.players[pid].chips -= need;
                 self.players[pid].contributed_this_round += need;
                 self.players[pid].contributed_total += need;
@@ -254,8 +268,9 @@ impl Game {
                 if self.players[pid].chips == 0 { self.players[pid].all_in = true; }
                 println!("{} calls {}.", self.players[pid].name, need);
             } else if all_in {
-                let need = call_diff.min(chips);
-                let raise_by = chips.saturating_sub(need);
+                let chips_now = self.players[pid].chips;
+                let need = call_diff.min(chips_now);
+                let raise_by = chips_now.saturating_sub(need);
                 self.players[pid].chips = 0;
                 self.players[pid].contributed_this_round += need + raise_by;
                 self.players[pid].contributed_total += need + raise_by;
@@ -268,8 +283,7 @@ impl Game {
                 }
                 println!("{} goes all-in for {}.", self.players[pid].name, need + raise_by);
             } else if bet_amt > 0 && current_bet == self.players[pid].contributed_this_round {
-                // bet must align to increment and <= chips
-                if bet_amt % inc != 0 || bet_amt == 0 || bet_amt > chips {
+                if bet_amt % inc != 0 || bet_amt == 0 || bet_amt > self.players[pid].chips {
                     println!("Invalid bet. Must be multiple of {} and <= your chips.", inc);
                     self.players[pid].folded = true;
                     println!("{} folds (invalid bet).", self.players[pid].name);
@@ -284,16 +298,16 @@ impl Game {
                     println!("{} bets {}.", self.players[pid].name, bet_amt);
                 }
             } else if raise_amt > 0 && current_bet > self.players[pid].contributed_this_round {
-                // raise includes call + raise_amt
                 if raise_amt % inc != 0 {
                     println!("Invalid raise increment.");
                     self.players[pid].folded = true;
                     println!("{} folds (invalid raise).", self.players[pid].name);
                 } else {
+                    let chips_now = self.players[pid].chips;
                     let need = call_diff + raise_amt;
-                    if need > chips {
-                        println!("Insufficient chips for that raise. Going all-in for {}.", chips);
-                        let to_put = chips;
+                    if need > chips_now {
+                        println!("Insufficient chips for that raise. Going all-in for {}.", chips_now);
+                        let to_put = chips_now;
                         self.players[pid].chips = 0;
                         self.players[pid].contributed_this_round += to_put;
                         self.players[pid].contributed_total += to_put;
@@ -331,33 +345,54 @@ impl Game {
         println!("--- Draw phase (up to {} cards) ---", self.settings.max_discards);
         for pid in self.seat_order_from(self.next_seat(self.dealer)) {
             if self.players[pid].folded || self.players[pid].all_in { continue; }
-            let hand = self.players[pid].hand.as_ref().unwrap();
-            println!("{}'s hand: [{}]", self.players[pid].name, hand.fmt_inline());
-            println!("Enter indices to discard (0-4, space-separated), or 'stand'. You have {} seconds.", self.settings.turn_timeout_secs);
+            let pname = self.players[pid].name.clone();
+            let before = {
+                let h = self.players[pid].hand.as_ref().unwrap();
+                h.fmt_inline()
+            };
+            println!("{}'s hand: [{}]", pname, before);
+            println!(
+                "Enter indices to discard (0-4, space-separated), or 'stand'. Type 'quit' to exit. You have {} seconds.",
+                self.settings.turn_timeout_secs
+            );
 
             let line = read_line_timeout("> ", self.settings.turn_timeout_secs).unwrap_or_else(|| "stand".to_string());
             let s = line.trim().to_lowercase();
+
+            if s == "quit" || s == "exit" {
+                println!("Are you sure you want to quit? [y/N]");
+                let ans = read_line_timeout("> ", 0).unwrap_or_default();
+                if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
+                    process::exit(0);
+                } else {
+                    println!("Continuing game.");
+                    continue; // same player continues to draw choice next loop iteration
+                }
+            }
+
             if s == "stand" || s.is_empty() {
-                println!("{} stands pat.", self.players[pid].name);
+                println!("{} stands pat.", pname);
                 continue;
             }
-            // parse indices
+
             let mut idxs: Vec<usize> = s.split_whitespace().filter_map(|t| t.parse::<usize>().ok()).collect();
             if idxs.len() > self.settings.max_discards {
                 idxs.truncate(self.settings.max_discards);
             }
-            // apply discards
-            let ph = self.players[pid].hand.as_mut().unwrap();
-            ph.discard_indices(idxs);
-            // draw up to 5 cards
-            while ph.cards.len() < 5 {
-                if let Some(c) = deck.deal() {
-                    ph.add(c);
-                } else {
-                    break;
+
+            {
+                let ph = self.players[pid].hand.as_mut().unwrap();
+                ph.discard_indices(idxs);
+                while ph.cards.len() < 5 {
+                    if let Some(c) = deck.deal() { ph.add(c); } else { break; }
                 }
             }
-            println!("{} draws. New hand: [{}]", self.players[pid].name, ph.fmt_inline());
+
+            let after = {
+                let h = self.players[pid].hand.as_ref().unwrap();
+                h.fmt_inline()
+            };
+            println!("{} draws. New hand: [{}]", pname, after);
         }
     }
 }
