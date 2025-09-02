@@ -182,6 +182,7 @@ impl Game {
         }
         let mut current_bet: u32 = 0;
         let mut last_raiser: Option<usize> = None;
+        let min_bet = self.settings.min_bet;
 
         let order = self.seat_order_from(self.next_seat(self.dealer));
         let mut idx = 0usize;
@@ -193,7 +194,13 @@ impl Game {
             clear_screen();
 
             let can_continue = self.players.iter().enumerate()
-                .any(|(i,p)| order.contains(&i) && !p.folded && !p.all_in && (p.contributed_this_round < current_bet));
+                .any(|(i, p)| {
+                    order.contains(&i)
+                        && !p.folded
+                        && !p.all_in
+                        && (p.contributed_this_round < current_bet
+                            || (current_bet == 0 && !seen_since_raise[i]))
+                });
             let need_more = if let Some(lr) = last_raiser { !seen_since_raise[lr] } else { false };
             let someone_can_act = self.players.iter().enumerate()
                 .any(|(i,p)| order.contains(&i) && p.can_act());
@@ -213,7 +220,6 @@ impl Game {
             }
 
             let call_diff = current_bet.saturating_sub(self.players[pid].contributed_this_round);
-            let chips = self.players[pid].chips;
 
             let total_pot = pot + self.players.iter().map(|pl| pl.contributed_this_round).sum::<u32>();
             println!("Pot: {}", total_pot);
