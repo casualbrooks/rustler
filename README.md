@@ -1,21 +1,47 @@
 # Rustler Project
 
 ## Prerequisites
+### Install Rust and Cargo
 
-1. Install Rust and Cargo:
-    ```bash
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-    ```
+**Linux or macOS**
 
-2. Verify installation:
-    ```bash
-    rustc --version
-    cargo --version
-    ```
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+**Windows**
+
+Download and run [rustup-init.exe](https://win.rustup.rs/) or install via
+the Windows package manager:
+
+```powershell
+winget install -e --id Rustlang.Rustup
+```
+
+After installation, restart your terminal and verify the tools are available:
+
+```bash
+rustc --version
+cargo --version
+```
 
 ## Running the Project
+To launch the Five-Card Draw Poker CLI:
 
-To run the project:
 ```bash
-cargo run
+cargo run --manifest-path poker_draw_cli/Cargo.toml
+```
+
+On Windows PowerShell, use the same command:
+
+```powershell
+cargo run --manifest-path poker_draw_cli/Cargo.toml
+```
+
+For a release build that produces an executable:
+
+```bash
+cargo build --manifest-path poker_draw_cli/Cargo.toml --release
+# Run ./poker_draw_cli/target/release/poker_draw_cli
+# On Windows: .\poker_draw_cli\target\release\poker_draw_cli.exe
 ```

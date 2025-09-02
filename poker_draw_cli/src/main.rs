@@ -38,7 +38,7 @@ fn main() {
         let settings = GameSettings {
             num_players: num_players as usize,
             starting_chips,
-            bet_increment: 5,
+            min_bet: 10,
             turn_timeout_secs: turn_secs,
             max_discards: 3, // common variant
         };
