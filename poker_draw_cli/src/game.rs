@@ -9,7 +9,7 @@ use crate::timer::read_line_timeout;
 pub struct GameSettings {
     pub num_players: usize,
     pub starting_chips: u32,
-    pub bet_increment: u32,
+    pub min_bet: u32,
     pub turn_timeout_secs: u64,
     pub max_discards: usize,
 }
@@ -202,9 +202,12 @@ impl Game {
             }
             let hand_str = self.players[pid].hand.as_ref().map(|h| h.fmt_inline()).unwrap_or_default();
             println!("{} to act. Hand: [{}]. You have {} seconds.", self.players[pid].name, hand_str, self.settings.turn_timeout_secs);
-            println!("Allowed: {}  | Type 'quit' to exit.",
-                if current_bet == self.players[pid].contributed_this_round { "check, bet <amount>, fold" } else { "call, raise <amount>, fold, all-in" }
-            );
+            let allowed = if current_bet == self.players[pid].contributed_this_round {
+                format!("check, bet <amount >= {}>, fold", min_bet)
+            } else {
+                format!("call, raise <amount >= {}>, fold, all-in", min_bet)
+            };
+            println!("Allowed: {}  | Type 'quit' to exit.", allowed);
             let prompt = format!("(call {} chips) > ", call_diff);
 
             let line = read_line_timeout(&prompt, self.settings.turn_timeout_secs).unwrap_or_default();
@@ -251,8 +254,6 @@ impl Game {
                 fold = true;
             }
 
-            let inc = self.settings.bet_increment;
-
             if fold {
                 self.players[pid].folded = true;
                 println!("{} folds.", self.players[pid].name);
@@ -283,8 +284,20 @@ impl Game {
                 }
                 println!("{} goes all-in for {}.", self.players[pid].name, need + raise_by);
             } else if bet_amt > 0 && current_bet == self.players[pid].contributed_this_round {
-                if bet_amt % inc != 0 || bet_amt == 0 || bet_amt > self.players[pid].chips {
-                    println!("Invalid bet. Must be multiple of {} and <= your chips.", inc);
+                let chips_now = self.players[pid].chips;
+                if bet_amt == chips_now {
+                    // treat as all-in bet
+                    self.players[pid].chips = 0;
+                    self.players[pid].contributed_this_round += bet_amt;
+                    self.players[pid].contributed_total += bet_amt;
+                    pot += bet_amt;
+                    self.players[pid].all_in = true;
+                    current_bet = self.players[pid].contributed_this_round;
+                    last_raiser = Some(pid);
+                    seen_since_raise.fill(false);
+                    println!("{} bets {} and is all-in.", self.players[pid].name, bet_amt);
+                } else if bet_amt < min_bet || bet_amt > chips_now {
+                    println!("Invalid bet. Must be between {} and your chips.", min_bet);
                     self.players[pid].folded = true;
                     println!("{} folds (invalid bet).", self.players[pid].name);
                 } else {
@@ -298,36 +311,34 @@ impl Game {
                     println!("{} bets {}.", self.players[pid].name, bet_amt);
                 }
             } else if raise_amt > 0 && current_bet > self.players[pid].contributed_this_round {
-                if raise_amt % inc != 0 {
-                    println!("Invalid raise increment.");
-                    self.players[pid].folded = true;
-                    println!("{} folds (invalid raise).", self.players[pid].name);
-                } else {
-                    let chips_now = self.players[pid].chips;
-                    let need = call_diff + raise_amt;
-                    if need > chips_now {
-                        println!("Insufficient chips for that raise. Going all-in for {}.", chips_now);
-                        let to_put = chips_now;
-                        self.players[pid].chips = 0;
-                        self.players[pid].contributed_this_round += to_put;
-                        self.players[pid].contributed_total += to_put;
-                        pot += to_put;
-                        self.players[pid].all_in = true;
-                        if self.players[pid].contributed_this_round > current_bet {
-                            current_bet = self.players[pid].contributed_this_round;
-                            last_raiser = Some(pid);
-                            seen_since_raise.fill(false);
-                        }
-                    } else {
-                        self.players[pid].chips -= need;
-                        self.players[pid].contributed_this_round += need;
-                        self.players[pid].contributed_total += need;
-                        pot += need;
+                let chips_now = self.players[pid].chips;
+                let need = call_diff + raise_amt;
+                if need > chips_now {
+                    println!("Insufficient chips for that raise. Going all-in for {}.", chips_now);
+                    let to_put = chips_now;
+                    self.players[pid].chips = 0;
+                    self.players[pid].contributed_this_round += to_put;
+                    self.players[pid].contributed_total += to_put;
+                    pot += to_put;
+                    self.players[pid].all_in = true;
+                    if self.players[pid].contributed_this_round > current_bet {
                         current_bet = self.players[pid].contributed_this_round;
                         last_raiser = Some(pid);
                         seen_since_raise.fill(false);
-                        println!("{} raises {} (total to {}).", self.players[pid].name, raise_amt, current_bet);
                     }
+                } else if raise_amt < min_bet {
+                    println!("Invalid raise. Minimum is {}.", min_bet);
+                    self.players[pid].folded = true;
+                    println!("{} folds (invalid raise).", self.players[pid].name);
+                } else {
+                    self.players[pid].chips -= need;
+                    self.players[pid].contributed_this_round += need;
+                    self.players[pid].contributed_total += need;
+                    pot += need;
+                    current_bet = self.players[pid].contributed_this_round;
+                    last_raiser = Some(pid);
+                    seen_since_raise.fill(false);
+                    println!("{} raises {} (total to {}).", self.players[pid].name, raise_amt, current_bet);
                 }
             } else {
                 println!("Invalid/illegal action in this spot. Fold.");
