@@ -233,9 +233,9 @@ impl Game {
             let hand_str = self.players[pid].hand.as_ref().map(|h| h.fmt_inline()).unwrap_or_default();
             println!("{} to act. Hand: [{}]. You have {} seconds.", self.players[pid].name, hand_str, self.settings.turn_timeout_secs);
             let allowed = if current_bet == self.players[pid].contributed_this_round {
-                format!("check, bet <amount >= {}>, fold", min_bet)
+                format!("check, bet <amount >= {}>, fold", self.settings.min_bet)
             } else {
-                format!("call, raise <amount >= {}>, fold, all-in", min_bet)
+                format!("call, raise <amount >= {}>, fold, all-in", self.settings.min_bet)
             };
             println!("Allowed: {}  | Type 'quit' to exit.", allowed);
             let prompt = format!("(call {} chips) > ", call_diff);
@@ -335,8 +335,8 @@ impl Game {
                     seen_since_raise.fill(false);
                     self.players[pid].last_action = format!("all-in {}", bet_amt);
                     println!("{} bets {} and is all-in.", self.players[pid].name, bet_amt);
-                } else if bet_amt < min_bet || bet_amt > chips_now {
-                    println!("Invalid bet. Must be between {} and your chips.", min_bet);
+                } else if bet_amt < self.settings.min_bet || bet_amt > chips_now {
+                    println!("Invalid bet. Must be between {} and your chips.", self.settings.min_bet);
                     self.players[pid].folded = true;
                     self.players[pid].last_action = "folded".to_string();
                     println!("{} folds (invalid bet).", self.players[pid].name);
@@ -368,8 +368,8 @@ impl Game {
                         seen_since_raise.fill(false);
                     }
                     self.players[pid].last_action = format!("all-in {}", to_put);
-                } else if raise_amt < min_bet {
-                    println!("Invalid raise. Minimum is {}.", min_bet);
+                } else if raise_amt < self.settings.min_bet {
+                    println!("Invalid raise. Minimum is {}.", self.settings.min_bet);
                     self.players[pid].folded = true;
                     self.players[pid].last_action = "folded".to_string();
                     println!("{} folds (invalid raise).", self.players[pid].name);
