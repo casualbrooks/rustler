@@ -11,6 +11,7 @@ pub struct Player {
     pub hand: Option<Hand>,
     pub contributed_this_round: u32,
     pub contributed_total: u32,
+    pub last_action: String,
 }
 
 impl Player {
@@ -24,6 +25,7 @@ impl Player {
             hand: None,
             contributed_this_round: 0,
             contributed_total: 0,
+            last_action: String::new(),
         }
     }
 
@@ -33,6 +35,7 @@ impl Player {
         self.hand = Some(Hand::new());
         self.contributed_this_round = 0;
         self.contributed_total = 0;
+        self.last_action.clear();
     }
 
     pub fn can_act(&self) -> bool {
