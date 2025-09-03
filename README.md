@@ -45,3 +45,10 @@ cargo build --manifest-path poker_draw_cli/Cargo.toml --release
 # Run ./poker_draw_cli/target/release/poker_draw_cli
 # On Windows: .\poker_draw_cli\target\release\poker_draw_cli.exe
 ```
+
+## Hand History Logging
+Every game session generates a unique table name and records each hand as it
+plays out. Public actions such as bets, folds, and pots are timestamped and
+emitted to stdout at the end of a match. A separate private log captures each
+player's hidden cards and final hands so the complete game can be replayed
+later.
