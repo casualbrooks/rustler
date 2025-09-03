@@ -322,7 +322,6 @@ impl Game {
         }
         let mut current_bet: u32 = 0;
         let mut last_raiser: Option<usize> = None;
-        let min_bet = self.settings.min_bet;
 
         let order = self.seat_order_from(self.next_seat(self.dealer));
         let mut idx = 0usize;
@@ -427,10 +426,10 @@ impl Game {
                 self.players[pid].name, self.players[pid].chips, self.settings.turn_timeout_secs
             );
             // numeric action selection with validation
-            let choice: u32;
+            let mut choice: u32 = 0;
             let mut amount: u32 = 0;
             let mut player_left = false;
-            let mut timed_out = false;
+            let mut timed_out: bool;
             let mut reveal_idxs: Vec<usize> = Vec::new();
             loop {
                 timed_out = false;
