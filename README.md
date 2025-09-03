@@ -51,4 +51,5 @@ Every game session generates a unique table name and records each hand as it
 plays out. Public actions such as bets, folds, and pots are timestamped and
 emitted to stdout at the end of a match. A separate private log captures each
 player's hidden cards and final hands so the complete game can be replayed
-later.
+later. Each entry includes a millisecond timestamp so action order and replay
+timing can be reconstructed precisely.
