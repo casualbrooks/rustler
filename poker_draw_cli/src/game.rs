@@ -396,6 +396,9 @@ impl Game {
         let mut last_raiser: Option<usize> = None;
 
         let order = self.seat_order_from(self.next_seat(self.dealer));
+        if order.is_empty() {
+            return pot;
+        }
         let mut idx = 0usize;
         let mut seen_since_raise: Vec<bool> = vec![false; self.players.len()];
 
