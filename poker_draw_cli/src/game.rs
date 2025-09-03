@@ -309,6 +309,7 @@ impl Game {
             pots.push((total_pot - prev_total, eligible));
         }
 
+        clear_screen();
         println!("Showdown:");
         for (amt, elig) in pots {
             if elig.is_empty() {
@@ -333,10 +334,18 @@ impl Game {
             }
             println!("  Pot of {} chips:", amt);
             for &pid in &best {
-                let hand_str = self.players[pid].hand.as_ref().unwrap().fmt_inline();
+                let hand_ref = self.players[pid].hand.as_ref().unwrap();
+                let hand_str = hand_ref.fmt_inline();
+                let hand_type = hand::describe(hand_ref);
                 let name = self.players[pid].name.clone();
-                println!("    {} wins {} with [{}]", name, share, hand_str);
-                self.log_action(pid, &format!("wins {} with [{}]", share, hand_str));
+                println!(
+                    "    {} wins {} with [{}] {}",
+                    name, share, hand_str, hand_type
+                );
+                self.log_action(
+                    pid,
+                    &format!("wins {} with [{}] {}", share, hand_str, hand_type),
+                );
             }
         }
 
