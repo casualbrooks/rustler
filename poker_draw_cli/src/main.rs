@@ -4,7 +4,6 @@ mod game;
 mod hand;
 mod player;
 mod timer;
-mod game;
 mod logger;
 
 use game::{Game, GameSettings};
@@ -49,10 +48,10 @@ fn main() {
     loop {
         let mut game = Game::new(settings);
         if player_names.is_empty() {
-            game.setup_players(None);
+            game.setup_players();
             player_names = game.players.iter().map(|p| p.name.clone()).collect();
         } else {
-            game.setup_players(Some(&player_names));
+            game.setup_players();
         }
 
         let winner = game.play_until_winner();

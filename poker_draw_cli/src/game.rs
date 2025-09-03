@@ -20,6 +20,7 @@ pub struct GameSettings {
 pub struct Game {
     pub settings: GameSettings,
     pub players: Vec<Player>,
+    pub names: Vec<String>,
     dealer: usize,
     pub logger: TableLog,
 }
@@ -34,6 +35,7 @@ impl Game {
         Self {
             settings,
             players: Vec::new(),
+            names: Vec::new(),
             dealer: 0,
             logger: TableLog::new(),
         }
@@ -56,12 +58,10 @@ impl Game {
         self.players.clear();
         for i in 0..self.settings.num_players {
             let mut player = Player::new(i, self.settings.starting_chips);
-            if let Some(list) = names {
-                if let Some(name) = list.get(i) {
-                    player.name = name.clone();
-                    self.players.push(player);
-                    continue;
-                }
+            if let Some(name) = self.names.get(i) {
+                player.name = name.clone();
+                self.players.push(player);
+                continue;
             }
             loop {
                 println!("Enter name for Player {} (max 20 chars):", i + 1);
@@ -441,12 +441,11 @@ impl Game {
                 .any(|(_, p)| p.chips + p.contributed_this_round > current_bet);
             let can_raise = chips_after_call >= self.settings.min_bet && others_can_call_more;
 
-            let total_pot = pot
-                + self
-                    .players
-                    .iter()
-                    .map(|pl| pl.contributed_this_round)
-                    .sum::<u32>();
+           let total_pot: u32 = self
+                .players
+                .iter()
+                .map(|pl| pl.contributed_total)
+                .sum();
             let active_players: Vec<String> = self
                 .players
                 .iter()
