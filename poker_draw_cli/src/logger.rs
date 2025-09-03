@@ -21,18 +21,10 @@ impl LogEntry {
     }
 }
 
+#[derive(Default)]
 pub struct HandLog {
     pub events: Vec<LogEntry>,
     pub private: Vec<LogEntry>,
-}
-
-impl HandLog {
-    fn new() -> Self {
-        Self {
-            events: Vec::new(),
-            private: Vec::new(),
-        }
-    }
 }
 
 pub struct TableLog {
@@ -53,7 +45,7 @@ impl TableLog {
     }
 
     pub fn start_hand(&mut self) {
-        self.hands.push(HandLog::new());
+        self.hands.push(HandLog::default());
     }
 
     fn current_mut(&mut self) -> Option<&mut HandLog> {
