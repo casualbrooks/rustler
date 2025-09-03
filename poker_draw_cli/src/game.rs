@@ -857,6 +857,7 @@ impl Game {
                 }
 
                 if s == "view hand" {
+
                     if let Some(h) = self.players[pid].hand.as_ref() {
                         println!("Hand: [{}]", h.fmt_inline());
                     }
