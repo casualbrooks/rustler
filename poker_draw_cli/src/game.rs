@@ -328,7 +328,14 @@ impl Game {
                 .players
                 .iter()
                 .filter(|p| p.folded && p.hand.is_some())
-                .map(|p| p.name.clone())
+                .map(|p| {
+                    if p.revealed_on_fold {
+                        let hand_str = p.hand.as_ref().map(|h| h.fmt_inline()).unwrap_or_default();
+                        format!("{} [{}]", p.name, hand_str)
+                    } else {
+                        p.name.clone()
+                    }
+                })
                 .collect();
             println!("Players still in: {}", active_players.join(", "));
             if folded_players.is_empty() {
@@ -337,21 +344,10 @@ impl Game {
                 println!("Players folded: {}", folded_players.join(", "));
             }
             println!("Pot: {}", total_pot);
-            println!("Action on: {}", self.players[pid].name);
-            println!("Press Enter to reveal your cards...");
-            let _ = read_line_timeout("> ", 0);
-            clear_screen();
-            println!("Pot: {}", total_pot);
             println!("Current bet: {}", current_bet);
-            let hand_str = self.players[pid]
-                .hand
-                .as_ref()
-                .map(|h| h.fmt_inline())
-                .unwrap_or_default();
             println!(
-                "{} to act. Hand: [{}]. Stack: {} chips. You have {} seconds.",
+                "Action on: {}. Stack: {} chips. You have {} seconds.",
                 self.players[pid].name,
-                hand_str,
                 self.players[pid].chips,
                 self.settings.turn_timeout_secs
             );
@@ -361,12 +357,12 @@ impl Game {
             loop {
                 if current_bet == self.players[pid].contributed_this_round {
                     println!(
-                        "Actions: [0] Check  [1] Bet <amt>=min {}  [2] Fold  [3] All-in",
+                        "Actions: [0] Check  [1] Bet <amt>=min {}  [2] Fold  [3] All-in  [4] View cards",
                         self.settings.min_bet
                     );
                 } else {
                     println!(
-                        "Actions: [0] Call {}  [1] Raise <amt>=min {}  [2] Fold  [3] All-in",
+                        "Actions: [0] Call {}  [1] Raise <amt>=min {}  [2] Fold  [3] All-in  [4] View cards",
                         call_diff, self.settings.min_bet
                     );
                 }
@@ -419,13 +415,22 @@ impl Game {
                                 choice = 3;
                                 break;
                             }
-                            _ => println!("Invalid selection."),
+                            4 => {
+                                let hand_str = self.players[pid]
+                                    .hand
+                                    .as_ref()
+                                    .map(|h| h.fmt_inline())
+                                    .unwrap_or_default();
+                                println!("Hand: [{}]", hand_str);
+                                continue;
+                            }
+                            _ => println!("Invalid option."),
                         }
                     } else {
-                        println!("Invalid selection.");
+                        println!("Invalid option.");
                     }
                 } else {
-                    println!("Invalid selection.");
+                    println!("Invalid option.");
                 }
             }
 
@@ -433,6 +438,14 @@ impl Game {
                 self.players[pid].folded = true;
                 self.players[pid].last_action = "folded".to_string();
                 println!("{} folds.", self.players[pid].name);
+                println!("Reveal your cards? [y/N]");
+                let ans = read_line_timeout("> ", 0).unwrap_or_default();
+                if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
+                    self.players[pid].revealed_on_fold = true;
+                    if let Some(h) = self.players[pid].hand.as_ref() {
+                        println!("Folded hand: [{}]", h.fmt_inline());
+                    }
+                }
             } else if choice == 0 && current_bet == self.players[pid].contributed_this_round {
                 self.players[pid].last_action = "checked".to_string();
                 println!("{} checks.", self.players[pid].name);
@@ -486,17 +499,13 @@ impl Game {
                         "Invalid bet. Must be between {} and your chips.",
                         self.settings.min_bet
                     );
-                    self.players[pid].folded = true;
-                    self.players[pid].last_action = "folded".to_string();
-                    println!("{} folds (invalid bet).", self.players[pid].name);
+                    continue;
                 } else if amount < self.settings.min_bet && amount != chips_now {
                     println!(
                         "Invalid bet. Must be at least {} or all-in.",
                         self.settings.min_bet
                     );
-                    self.players[pid].folded = true;
-                    self.players[pid].last_action = "folded".to_string();
-                    println!("{} folds (invalid bet).", self.players[pid].name);
+                    continue;
                 } else {
                     self.players[pid].chips -= amount;
                     self.players[pid].contributed_this_round += amount;
@@ -544,9 +553,7 @@ impl Game {
                     println!("{} calls {}.", self.players[pid].name, to_put);
                 } else if amount < self.settings.min_bet {
                     println!("Invalid raise. Minimum is {}.", self.settings.min_bet);
-                    self.players[pid].folded = true;
-                    self.players[pid].last_action = "folded".to_string();
-                    println!("{} folds (invalid raise).", self.players[pid].name);
+                    continue;
                 } else {
                     self.players[pid].chips -= need;
                     self.players[pid].contributed_this_round += need;
@@ -603,7 +610,14 @@ impl Game {
                 .players
                 .iter()
                 .filter(|p| p.folded && p.hand.is_some())
-                .map(|p| p.name.clone())
+                .map(|p| {
+                    if p.revealed_on_fold {
+                        let hand_str = p.hand.as_ref().map(|h| h.fmt_inline()).unwrap_or_default();
+                        format!("{} [{}]", p.name, hand_str)
+                    } else {
+                        p.name.clone()
+                    }
+                })
                 .collect();
             println!("Players still in: {}", active_players.join(", "));
             if folded_players.is_empty() {
@@ -613,42 +627,47 @@ impl Game {
             }
             println!("Pot: {}", pot_total);
             println!("Action on: {}", self.players[pid].name);
-            println!("Press Enter to reveal your cards...");
-            let _ = read_line_timeout("> ", 0);
-            clear_screen();
             let pname = self.players[pid].name.clone();
-            let before = {
-                let h = self.players[pid].hand.as_ref().unwrap();
-                h.fmt_inline()
-            };
-            println!("{}'s hand: [{}]", pname, before);
-            println!(
-                "Enter indices to discard (0-4, space-separated), or 'stand'. Type 'quit' to exit. You have {} seconds.",
-                self.settings.turn_timeout_secs
-            );
+            loop {
+                println!(
+                    "Enter indices to discard (0-4, space-separated), 'stand', or 'view'. Type 'quit' to exit. You have {} seconds.",
+                    self.settings.turn_timeout_secs
+                );
+                let line = read_line_timeout("> ", self.settings.turn_timeout_secs)
+                    .unwrap_or_else(|| "stand".to_string());
+                let s = line.trim().to_lowercase();
 
-            let line = read_line_timeout("> ", self.settings.turn_timeout_secs)
-                .unwrap_or_else(|| "stand".to_string());
-            let s = line.trim().to_lowercase();
-
-            if s == "quit" || s == "exit" {
-                println!("Are you sure you want to quit? [y/N]");
-                let ans = read_line_timeout("> ", 0).unwrap_or_default();
-                if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
-                    process::exit(0);
-                } else {
-                    println!("Continuing game.");
-                    continue; // same player continues to draw choice next loop iteration
+                if s == "quit" || s == "exit" {
+                    println!("Are you sure you want to quit? [y/N]");
+                    let ans = read_line_timeout("> ", 0).unwrap_or_default();
+                    if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
+                        process::exit(0);
+                    } else {
+                        println!("Continuing game.");
+                        continue;
+                    }
                 }
-            }
 
-            if s == "stand" || s.is_empty() {
-                println!("{} stands pat.", pname);
-            } else {
+                if s == "view" {
+                    if let Some(h) = self.players[pid].hand.as_ref() {
+                        println!("Hand: [{}]", h.fmt_inline());
+                    }
+                    continue;
+                }
+
+                if s == "stand" || s.is_empty() {
+                    println!("{} stands pat.", pname);
+                    break;
+                }
+
                 let mut idxs: Vec<usize> = s
                     .split_whitespace()
                     .filter_map(|t| t.parse::<usize>().ok())
                     .collect();
+                if idxs.is_empty() {
+                    println!("Invalid option.");
+                    continue;
+                }
                 if idxs.len() > self.settings.max_discards {
                     idxs.truncate(self.settings.max_discards);
                 }
@@ -669,7 +688,8 @@ impl Game {
                     let h = self.players[pid].hand.as_ref().unwrap();
                     h.fmt_inline()
                 };
-                println!("{} draws. New hand: [{}]", pname, after);
+                println!("{} discards, new hand: [{}]", pname, after);
+                break;
             }
         }
         clear_screen();

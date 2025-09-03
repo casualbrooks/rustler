@@ -12,6 +12,7 @@ pub struct Player {
     pub contributed_this_round: u32,
     pub contributed_total: u32,
     pub last_action: String,
+    pub revealed_on_fold: bool,
 }
 
 impl Player {
@@ -26,6 +27,7 @@ impl Player {
             contributed_this_round: 0,
             contributed_total: 0,
             last_action: String::new(),
+            revealed_on_fold: false,
         }
     }
 
@@ -36,6 +38,7 @@ impl Player {
         self.contributed_this_round = 0;
         self.contributed_total = 0;
         self.last_action.clear();
+        self.revealed_on_fold = false;
     }
 
     pub fn can_act(&self) -> bool {
