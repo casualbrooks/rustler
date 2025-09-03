@@ -259,36 +259,60 @@ impl Game {
         }
 
         // Showdown with side pots
-        let mut contribs: Vec<(usize, u32, bool)> = self
+        // Gather contributions from players still in the hand
+        let mut active: Vec<(usize, u32)> = self
             .players
             .iter()
             .enumerate()
-            .map(|(i, p)| (i, p.contributed_total, !p.folded && p.hand.is_some()))
-            .filter(|(_, c, _)| *c > 0)
+            .filter(|(_, p)| !p.folded && p.hand.is_some() && p.contributed_total > 0)
+            .map(|(i, p)| (i, p.contributed_total))
             .collect();
-        contribs.sort_by_key(|k| k.1);
+        active.sort_by_key(|k| k.1);
 
-        if contribs.is_empty() {
+        if active.is_empty() {
             self.rotate_dealer();
             return;
         }
 
+        // Total amount in the pot from all players
+        let total_pot: u32 = self.players.iter().map(|p| p.contributed_total).sum();
+
+        // Build pots based on active players' contribution levels
         let mut pots: Vec<(u32, Vec<usize>)> = Vec::new();
-        let mut prev = 0;
-        for i in 0..contribs.len() {
-            let contrib = contribs[i].1;
-            if contrib == prev {
+        let mut prev_total = 0;
+        let mut last_level = 0;
+        for (_, level) in &active {
+            if *level == last_level {
                 continue;
             }
-            let involved = &contribs[i..];
-            let pot_amount = (contrib - prev) * involved.len() as u32;
-            let eligible: Vec<usize> = involved
+            let cumulative: u32 = self
+                .players
                 .iter()
-                .filter(|(_, _, e)| *e)
-                .map(|(pid, _, _)| *pid)
+                .map(|p| std::cmp::min(p.contributed_total, *level))
+                .sum();
+            let pot_amount = cumulative - prev_total;
+            let eligible: Vec<usize> = self
+                .players
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| !p.folded && p.hand.is_some() && p.contributed_total >= *level)
+                .map(|(i, _)| i)
                 .collect();
             pots.push((pot_amount, eligible));
-            prev = contrib;
+            prev_total = cumulative;
+            last_level = *level;
+        }
+
+        // Any remaining chips (from folded players exceeding active amounts)
+        if prev_total < total_pot {
+            let eligible: Vec<usize> = self
+                .players
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| !p.folded && p.hand.is_some())
+                .map(|(i, _)| i)
+                .collect();
+            pots.push((total_pot - prev_total, eligible));
         }
 
         clear_screen();
@@ -456,6 +480,9 @@ impl Game {
         let mut last_raiser: Option<usize> = None;
 
         let order = self.seat_order_from(self.next_seat(self.dealer));
+        if order.is_empty() {
+            return pot;
+        }
         let mut idx = 0usize;
         let mut seen_since_raise: Vec<bool> = vec![false; self.players.len()];
 
