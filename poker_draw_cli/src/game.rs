@@ -4,9 +4,9 @@ use std::process;
 
 use crate::deck::Deck;
 use crate::hand;
+use crate::logger::TableLog;
 use crate::player::Player;
 use crate::timer::read_line_timeout;
-use crate::logger::TableLog;
 
 #[derive(Copy, Clone)]
 pub struct GameSettings {
@@ -46,8 +46,7 @@ impl Game {
     fn log_action(&mut self, pid: usize, action: &str) {
         let stack = self.players[pid].chips;
         let name = self.players[pid].name.clone();
-        self
-            .logger
+        self.logger
             .log_action(&name, &format!("{} (stack: {})", action, stack));
     }
 
@@ -193,7 +192,11 @@ impl Game {
             self.log_action(winner, &format!("wins {} chips as all others folded", pot));
             for i in 0..self.players.len() {
                 if let Some(h) = self.players[i].hand.as_ref() {
-                    let note = if i == winner { "final hand" } else { "final hand (folded)" };
+                    let note = if i == winner {
+                        "final hand"
+                    } else {
+                        "final hand (folded)"
+                    };
                     self.log_private(i, &format!("{} [{}]", note, h.fmt_inline()));
                 }
             }
@@ -231,7 +234,11 @@ impl Game {
             self.log_action(winner, &format!("wins {} chips as all others folded", pot));
             for i in 0..self.players.len() {
                 if let Some(h) = self.players[i].hand.as_ref() {
-                    let note = if i == winner { "final hand" } else { "final hand (folded)" };
+                    let note = if i == winner {
+                        "final hand"
+                    } else {
+                        "final hand (folded)"
+                    };
                     self.log_private(i, &format!("{} [{}]", note, h.fmt_inline()));
                 }
             }
@@ -246,36 +253,60 @@ impl Game {
         }
 
         // Showdown with side pots
-        let mut contribs: Vec<(usize, u32, bool)> = self
+        // Gather contributions from players still in the hand
+        let mut active: Vec<(usize, u32)> = self
             .players
             .iter()
             .enumerate()
-            .map(|(i, p)| (i, p.contributed_total, !p.folded && p.hand.is_some()))
-            .filter(|(_, c, _)| *c > 0)
+            .filter(|(_, p)| !p.folded && p.hand.is_some() && p.contributed_total > 0)
+            .map(|(i, p)| (i, p.contributed_total))
             .collect();
-        contribs.sort_by_key(|k| k.1);
+        active.sort_by_key(|k| k.1);
 
-        if contribs.is_empty() {
+        if active.is_empty() {
             self.rotate_dealer();
             return;
         }
 
+        // Total amount in the pot from all players
+        let total_pot: u32 = self.players.iter().map(|p| p.contributed_total).sum();
+
+        // Build pots based on active players' contribution levels
         let mut pots: Vec<(u32, Vec<usize>)> = Vec::new();
-        let mut prev = 0;
-        for i in 0..contribs.len() {
-            let contrib = contribs[i].1;
-            if contrib == prev {
+        let mut prev_total = 0;
+        let mut last_level = 0;
+        for (_, level) in &active {
+            if *level == last_level {
                 continue;
             }
-            let involved = &contribs[i..];
-            let pot_amount = (contrib - prev) * involved.len() as u32;
-            let eligible: Vec<usize> = involved
+            let cumulative: u32 = self
+                .players
                 .iter()
-                .filter(|(_, _, e)| *e)
-                .map(|(pid, _, _)| *pid)
+                .map(|p| std::cmp::min(p.contributed_total, *level))
+                .sum();
+            let pot_amount = cumulative - prev_total;
+            let eligible: Vec<usize> = self
+                .players
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| !p.folded && p.hand.is_some() && p.contributed_total >= *level)
+                .map(|(i, _)| i)
                 .collect();
             pots.push((pot_amount, eligible));
-            prev = contrib;
+            prev_total = cumulative;
+            last_level = *level;
+        }
+
+        // Any remaining chips (from folded players exceeding active amounts)
+        if prev_total < total_pot {
+            let eligible: Vec<usize> = self
+                .players
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| !p.folded && p.hand.is_some())
+                .map(|(i, _)| i)
+                .collect();
+            pots.push((total_pot - prev_total, eligible));
         }
 
         println!("Showdown:");
@@ -449,11 +480,7 @@ impl Game {
                 .any(|(_, p)| p.chips + p.contributed_this_round > current_bet);
             let can_raise = chips_after_call >= self.settings.min_bet && others_can_call_more;
 
-           let total_pot: u32 = self
-                .players
-                .iter()
-                .map(|pl| pl.contributed_total)
-                .sum();
+            let total_pot: u32 = self.players.iter().map(|pl| pl.contributed_total).sum();
             let active_players: Vec<String> = self
                 .players
                 .iter()
