@@ -4,9 +4,9 @@ use std::process;
 
 use crate::deck::Deck;
 use crate::hand;
+use crate::logger::TableLog;
 use crate::player::Player;
 use crate::timer::read_line_timeout;
-use crate::logger::TableLog;
 
 #[derive(Copy, Clone)]
 pub struct GameSettings {
@@ -46,8 +46,7 @@ impl Game {
     fn log_action(&mut self, pid: usize, action: &str) {
         let stack = self.players[pid].chips;
         let name = self.players[pid].name.clone();
-        self
-            .logger
+        self.logger
             .log_action(&name, &format!("{} (stack: {})", action, stack));
     }
 
@@ -86,6 +85,11 @@ impl Game {
             if let Some(w) = self.find_table_winner() {
                 return w.clone();
             }
+            println!("Shuffle up and deal next hand? [y/N]");
+            let ans = read_line_timeout("> ", 0).unwrap_or_default();
+            if !matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
+                process::exit(0);
+            }
         }
     }
 
@@ -122,6 +126,7 @@ impl Game {
         clear_screen();
         self.logger.start_hand();
         self.last_fold_was_timeout = false;
+        let starting_chips: Vec<u32> = self.players.iter().map(|p| p.chips).collect();
         let mut deck = Deck::new_shuffled();
         // reset per-player state
         for p in self.players.iter_mut() {
@@ -193,7 +198,11 @@ impl Game {
             self.log_action(winner, &format!("wins {} chips as all others folded", pot));
             for i in 0..self.players.len() {
                 if let Some(h) = self.players[i].hand.as_ref() {
-                    let note = if i == winner { "final hand" } else { "final hand (folded)" };
+                    let note = if i == winner {
+                        "final hand"
+                    } else {
+                        "final hand (folded)"
+                    };
                     self.log_private(i, &format!("{} [{}]", note, h.fmt_inline()));
                 }
             }
@@ -231,7 +240,11 @@ impl Game {
             self.log_action(winner, &format!("wins {} chips as all others folded", pot));
             for i in 0..self.players.len() {
                 if let Some(h) = self.players[i].hand.as_ref() {
-                    let note = if i == winner { "final hand" } else { "final hand (folded)" };
+                    let note = if i == winner {
+                        "final hand"
+                    } else {
+                        "final hand (folded)"
+                    };
                     self.log_private(i, &format!("{} [{}]", note, h.fmt_inline()));
                 }
             }
@@ -278,6 +291,7 @@ impl Game {
             prev = contrib;
         }
 
+        clear_screen();
         println!("Showdown:");
         for (amt, elig) in pots {
             if elig.is_empty() {
@@ -302,10 +316,18 @@ impl Game {
             }
             println!("  Pot of {} chips:", amt);
             for &pid in &best {
-                let hand_str = self.players[pid].hand.as_ref().unwrap().fmt_inline();
+                let hand_ref = self.players[pid].hand.as_ref().unwrap();
+                let hand_str = hand_ref.fmt_inline();
+                let hand_type = hand::describe(hand_ref);
                 let name = self.players[pid].name.clone();
-                println!("    {} wins {} with [{}]", name, share, hand_str);
-                self.log_action(pid, &format!("wins {} with [{}]", share, hand_str));
+                println!(
+                    "    {} wins {} with [{}] {}",
+                    name, share, hand_str, hand_type
+                );
+                self.log_action(
+                    pid,
+                    &format!("wins {} with [{}] {}", share, hand_str, hand_type),
+                );
             }
         }
 
@@ -320,6 +342,8 @@ impl Game {
                 self.log_private(i, &format!("{} [{}]", note, h.fmt_inline()));
             }
         }
+
+        self.display_results(&starting_chips);
 
         // Clear hands
         for p in self.players.iter_mut() {
@@ -348,6 +372,42 @@ impl Game {
                 if let Some(h) = self.players[pid].hand.as_ref() {
                     println!("{} reveals [{}]", self.players[pid].name, h.fmt_inline());
                 }
+            }
+        }
+    }
+
+    fn display_results(&self, starting_chips: &[u32]) {
+        let mut infos: Vec<(usize, i32, Option<hand::Hand>)> = self
+            .players
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let delta = p.chips as i32 - starting_chips[i] as i32;
+                (i, delta, p.hand.clone())
+            })
+            .collect();
+
+        infos.sort_by(|a, b| match (&a.2, &b.2) {
+            (Some(ref ha), Some(ref hb)) => hand::compare(hb, ha),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        });
+
+        println!("Hand results:");
+        for (i, delta, hand_opt) in infos {
+            let name = &self.players[i].name;
+            let delta_str = if delta >= 0 {
+                format!("+{}", delta)
+            } else {
+                delta.to_string()
+            };
+            if let Some(ref h) = hand_opt {
+                let hand_str = h.fmt_inline();
+                let hand_type = hand::describe(h);
+                println!("  {} [{}] {} ({})", name, hand_str, hand_type, delta_str);
+            } else {
+                println!("  {} folded ({})", name, delta_str);
             }
         }
     }
@@ -449,11 +509,7 @@ impl Game {
                 .any(|(_, p)| p.chips + p.contributed_this_round > current_bet);
             let can_raise = chips_after_call >= self.settings.min_bet && others_can_call_more;
 
-           let total_pot: u32 = self
-                .players
-                .iter()
-                .map(|pl| pl.contributed_total)
-                .sum();
+            let total_pot: u32 = self.players.iter().map(|pl| pl.contributed_total).sum();
             let active_players: Vec<String> = self
                 .players
                 .iter()
