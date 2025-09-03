@@ -105,6 +105,17 @@ impl Game {
             }
         }
 
+        let order = self.seat_order_from(self.next_seat(self.dealer));
+        let names: Vec<String> = order
+            .iter()
+            .map(|&pid| self.players[pid].name.clone())
+            .collect();
+        println!(
+            "{} shuffles and deals one card at a time clockwise around the table to {} x5",
+            self.players[self.dealer].name,
+            names.join(" then ")
+        );
+
         // deal 5 cards to each active player
         for _ in 0..5 {
             for pid in self.seat_order_from(self.next_seat(self.dealer)) {
@@ -258,6 +269,32 @@ impl Game {
         (i + 1) % self.players.len()
     }
 
+    fn handle_player_quit(&mut self, pid: usize) {
+        let chips = self.players[pid].chips;
+        if chips > 0 {
+            let recipients: Vec<usize> = self
+                .players
+                .iter()
+                .enumerate()
+                .filter(|(i, p)| *i != pid && p.chips > 0)
+                .map(|(i, _)| i)
+                .collect();
+            if !recipients.is_empty() {
+                let share = chips / recipients.len() as u32;
+                let mut rem = chips % recipients.len() as u32;
+                for &i in &recipients {
+                    let extra = if rem > 0 { rem -= 1; 1 } else { 0 };
+                    self.players[i].chips += share + extra;
+                }
+            }
+        }
+        self.players[pid].chips = 0;
+        self.players[pid].folded = true;
+        self.players[pid].hand = None;
+        self.players[pid].last_action = "quit".to_string();
+        println!("{} leaves the game.", self.players[pid].name);
+    }
+
     fn betting_round(&mut self, title: &str, _deck: &mut Deck) -> u32 {
         println!("--- {} ---", title);
         let mut pot: u32 = 0;
@@ -347,13 +384,12 @@ impl Game {
             println!("Current bet: {}", current_bet);
             println!(
                 "Action on: {}. Stack: {} chips. You have {} seconds.",
-                self.players[pid].name,
-                self.players[pid].chips,
-                self.settings.turn_timeout_secs
+                self.players[pid].name, self.players[pid].chips, self.settings.turn_timeout_secs
             );
             // numeric action selection with validation
             let choice: u32;
             let mut amount: u32 = 0;
+            let mut player_left = false;
             loop {
                 if current_bet == self.players[pid].contributed_this_round {
                     println!(
@@ -366,7 +402,7 @@ impl Game {
                         call_diff, self.settings.min_bet
                     );
                 }
-                println!("Type action number (and amount if needed). Type 'quit' to exit.");
+                println!("Type action number (and amount if needed). Type 'quit' to fold and leave game or 'exit' to quit program.");
                 let prompt = if current_bet == self.players[pid].contributed_this_round {
                     "> ".to_string()
                 } else {
@@ -375,11 +411,26 @@ impl Game {
                 let line =
                     read_line_timeout(&prompt, self.settings.turn_timeout_secs).unwrap_or_default();
                 let s = line.trim().to_lowercase();
-                if s == "quit" || s == "exit" {
-                    println!("Are you sure you want to quit? [y/N]");
+                if s == "exit" {
+                    println!("Are you sure you want to exit? [y/N]");
                     let ans = read_line_timeout("> ", 0).unwrap_or_default();
                     if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
                         process::exit(0);
+                    } else {
+                        println!("Continuing game.");
+                        continue;
+                    }
+                }
+
+                if s == "quit" {
+                    println!("Are you sure you want to leave the game? [y/N]");
+                    let ans = read_line_timeout("> ", 0).unwrap_or_default();
+                    if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
+                        self.handle_player_quit(pid);
+                        seen_since_raise[pid] = true;
+                        idx = (idx + 1) % order.len();
+                        player_left = true;
+                        break;
                     } else {
                         println!("Continuing game.");
                         continue;
@@ -432,6 +483,10 @@ impl Game {
                 } else {
                     println!("Invalid option.");
                 }
+            }
+
+            if player_left {
+                continue;
             }
 
             if choice == 2 {
@@ -595,11 +650,7 @@ impl Game {
                 continue;
             }
             clear_screen();
-            let pot_total: u32 = self
-                .players
-                .iter()
-                .map(|p| p.contributed_total)
-                .sum();
+            let pot_total: u32 = self.players.iter().map(|p| p.contributed_total).sum();
             let active_players: Vec<String> = self
                 .players
                 .iter()
@@ -628,20 +679,34 @@ impl Game {
             println!("Pot: {}", pot_total);
             println!("Action on: {}", self.players[pid].name);
             let pname = self.players[pid].name.clone();
+            let mut player_left = false;
             loop {
                 println!(
-                    "Enter indices to discard (0-4, space-separated), 'stand', or 'view'. Type 'quit' to exit. You have {} seconds.",
+                    "Enter indices to discard (0-4, space-separated), 'stand', or 'view'. Type 'quit' to fold and leave game or 'exit' to quit program. You have {} seconds.",
                     self.settings.turn_timeout_secs
                 );
                 let line = read_line_timeout("> ", self.settings.turn_timeout_secs)
                     .unwrap_or_else(|| "stand".to_string());
                 let s = line.trim().to_lowercase();
 
-                if s == "quit" || s == "exit" {
-                    println!("Are you sure you want to quit? [y/N]");
+                if s == "exit" {
+                    println!("Are you sure you want to exit? [y/N]");
                     let ans = read_line_timeout("> ", 0).unwrap_or_default();
                     if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
                         process::exit(0);
+                    } else {
+                        println!("Continuing game.");
+                        continue;
+                    }
+                }
+
+                if s == "quit" {
+                    println!("Are you sure you want to leave the game? [y/N]");
+                    let ans = read_line_timeout("> ", 0).unwrap_or_default();
+                    if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
+                        self.handle_player_quit(pid);
+                        player_left = true;
+                        break;
                     } else {
                         println!("Continuing game.");
                         continue;
@@ -690,6 +755,9 @@ impl Game {
                 };
                 println!("{} discards, new hand: [{}]", pname, after);
                 break;
+            }
+            if player_left {
+                continue;
             }
         }
         clear_screen();
