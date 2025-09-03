@@ -6,6 +6,7 @@ use crate::deck::Deck;
 use crate::hand;
 use crate::player::Player;
 use crate::timer::read_line_timeout;
+use crate::logger::TableLog;
 
 pub struct GameSettings {
     pub num_players: usize,
@@ -19,6 +20,7 @@ pub struct Game {
     pub settings: GameSettings,
     pub players: Vec<Player>,
     dealer: usize,
+    pub logger: TableLog,
 }
 
 fn clear_screen() {
@@ -32,7 +34,21 @@ impl Game {
             settings,
             players: Vec::new(),
             dealer: 0,
+            logger: TableLog::new(),
         }
+    }
+
+    fn log_action(&mut self, pid: usize, action: &str) {
+        let stack = self.players[pid].chips;
+        let name = self.players[pid].name.clone();
+        self
+            .logger
+            .log_action(&name, &format!("{} (stack: {})", action, stack));
+    }
+
+    fn log_private(&mut self, pid: usize, action: &str) {
+        let name = self.players[pid].name.clone();
+        self.logger.log_private(&name, action);
     }
 
     pub fn setup_players(&mut self) {
@@ -94,6 +110,7 @@ impl Game {
 
     pub fn play_hand(&mut self) {
         clear_screen();
+        self.logger.start_hand();
         let mut deck = Deck::new_shuffled();
         // reset per-player state
         for p in self.players.iter_mut() {
@@ -115,6 +132,13 @@ impl Game {
             self.players[self.dealer].name,
             names.join(" then ")
         );
+        self.log_action(
+            self.dealer,
+            &format!(
+                "shuffles and deals one card at a time clockwise around the table to {} x5",
+                names.join(" then ")
+            ),
+        );
 
         // deal 5 cards to each active player
         for _ in 0..5 {
@@ -124,6 +148,14 @@ impl Game {
                         hand.add(card);
                     }
                 }
+            }
+        }
+
+        // Log initial hands privately
+        for pid in self.seat_order_from(self.next_seat(self.dealer)) {
+            if let Some(hand) = self.players[pid].hand.as_ref() {
+                let hand_str = hand.fmt_inline();
+                self.log_private(pid, &format!("initial hand [{}]", hand_str));
             }
         }
 
@@ -147,6 +179,13 @@ impl Game {
                 "{} wins {} chips as all others folded.",
                 self.players[winner].name, pot
             );
+            self.log_action(winner, &format!("wins {} chips as all others folded", pot));
+            for i in 0..self.players.len() {
+                if let Some(h) = self.players[i].hand.as_ref() {
+                    let note = if i == winner { "final hand" } else { "final hand (folded)" };
+                    self.log_private(i, &format!("{} [{}]", note, h.fmt_inline()));
+                }
+            }
             self.offer_reveal(winner);
             for p in self.players.iter_mut() {
                 p.hand = None;
@@ -176,6 +215,13 @@ impl Game {
                 "{} wins {} chips as all others folded.",
                 self.players[winner].name, pot
             );
+            self.log_action(winner, &format!("wins {} chips as all others folded", pot));
+            for i in 0..self.players.len() {
+                if let Some(h) = self.players[i].hand.as_ref() {
+                    let note = if i == winner { "final hand" } else { "final hand (folded)" };
+                    self.log_private(i, &format!("{} [{}]", note, h.fmt_inline()));
+                }
+            }
             self.offer_reveal(winner);
             for p in self.players.iter_mut() {
                 p.hand = None;
@@ -240,14 +286,23 @@ impl Game {
                 self.players[pid].chips += share;
             }
             println!("  Pot of {} chips:", amt);
-            for pid in &best {
-                let p = &self.players[*pid];
-                println!(
-                    "    {} wins {} with [{}]",
-                    p.name,
-                    share,
-                    p.hand.as_ref().unwrap().fmt_inline()
-                );
+            for &pid in &best {
+                let hand_str = self.players[pid].hand.as_ref().unwrap().fmt_inline();
+                let name = self.players[pid].name.clone();
+                println!("    {} wins {} with [{}]", name, share, hand_str);
+                self.log_action(pid, &format!("wins {} with [{}]", share, hand_str));
+            }
+        }
+
+        // Record final hands privately
+        for i in 0..self.players.len() {
+            if let Some(h) = self.players[i].hand.as_ref() {
+                let note = if self.players[i].folded {
+                    "final hand (folded)"
+                } else {
+                    "final hand"
+                };
+                self.log_private(i, &format!("{} [{}]", note, h.fmt_inline()));
             }
         }
 
@@ -310,6 +365,7 @@ impl Game {
         self.players[pid].folded = true;
         self.players[pid].hand = None;
         self.players[pid].last_action = "quit".to_string();
+        self.log_action(pid, &self.players[pid].last_action.clone());
         println!("{} leaves the game.", self.players[pid].name);
     }
 
@@ -434,11 +490,11 @@ impl Game {
             loop {
                 timed_out = false;
                 let mut next_num = 1;
-                let mut call_num = 0;
+                let call_num: u32;
                 let mut bet_num = 0;
-                let mut fold_num = 0;
+                let fold_num: u32;
                 let mut allin_num: Option<u32> = None;
-                let mut quit_num = 0;
+                let quit_num: u32;
                 let mut opts = vec!["[0] View hand".to_string()];
 
                 if current_bet == self.players[pid].contributed_this_round {
@@ -595,6 +651,7 @@ impl Game {
                 self.players[pid].folded = true;
                 self.players[pid].last_action = "folded".to_string();
                 self.players[pid].revealed_on_fold = reveal_idxs.clone();
+                self.log_action(pid, &self.players[pid].last_action.clone());
                 if timed_out {
                     println!("{} folds (timeout).", self.players[pid].name);
                 } else {
@@ -617,6 +674,7 @@ impl Game {
                 }
             } else if choice == 0 && current_bet == self.players[pid].contributed_this_round {
                 self.players[pid].last_action = "checked".to_string();
+                self.log_action(pid, &self.players[pid].last_action.clone());
                 println!("{} checks.", self.players[pid].name);
             } else if choice == 0 {
                 let mut need = call_diff;
@@ -635,6 +693,7 @@ impl Game {
                 } else {
                     self.players[pid].last_action = format!("called {}", need);
                 }
+                self.log_action(pid, &self.players[pid].last_action.clone());
                 println!("{} calls {}.", self.players[pid].name, need);
             } else if choice == 3 {
                 let chips_now = self.players[pid].chips;
@@ -656,6 +715,7 @@ impl Game {
                     seen_since_raise.fill(false);
                 }
                 self.players[pid].last_action = format!("all-in {}", need + raise_by);
+                self.log_action(pid, &self.players[pid].last_action.clone());
                 println!(
                     "{} goes all-in for {}.",
                     self.players[pid].name,
@@ -694,9 +754,11 @@ impl Game {
                     if self.players[pid].chips == 0 {
                         self.players[pid].all_in = true;
                         self.players[pid].last_action = format!("all-in {}", amount);
+                        self.log_action(pid, &self.players[pid].last_action.clone());
                         println!("{} bets {} and is all-in.", self.players[pid].name, amount);
                     } else {
                         self.players[pid].last_action = format!("bet {}", amount);
+                        self.log_action(pid, &self.players[pid].last_action.clone());
                         println!("{} bets {}.", self.players[pid].name, amount);
                     }
                 }
@@ -719,6 +781,7 @@ impl Game {
                     } else {
                         self.players[pid].last_action = format!("called {}", to_put);
                     }
+                    self.log_action(pid, &self.players[pid].last_action.clone());
                     println!("{} calls {}.", self.players[pid].name, to_put);
                 } else if amount < self.settings.min_bet {
                     println!("Invalid raise. Minimum is {}.", self.settings.min_bet);
@@ -740,6 +803,7 @@ impl Game {
                         seen_since_raise.fill(false);
                     }
                     self.players[pid].last_action = format!("raised to {}", current_bet);
+                    self.log_action(pid, &self.players[pid].last_action.clone());
                     println!(
                         "{} raises {} (total to {}).",
                         self.players[pid].name, amount, current_bet
@@ -826,6 +890,7 @@ impl Game {
                     None => {
                         self.players[pid].folded = true;
                         self.players[pid].last_action = "folded".to_string();
+                        self.log_action(pid, &self.players[pid].last_action.clone());
                         println!("{} folds (timeout).", pname);
                         break;
                     }
@@ -865,6 +930,7 @@ impl Game {
 
                 if s == "stand" || s.is_empty() {
                     println!("{} stands pat.", pname);
+                    self.log_action(pid, "stands pat");
                     break;
                 }
 
@@ -902,6 +968,8 @@ impl Game {
                     h.fmt_inline()
                 };
                 println!("{} discards, new hand: [{}]", pname, after);
+                self.log_action(pid, "draws new cards");
+                self.log_private(pid, &format!("after draw [{}]", after));
                 break;
             }
             if player_left {
