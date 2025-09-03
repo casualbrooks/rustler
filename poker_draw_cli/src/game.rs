@@ -80,6 +80,7 @@ impl Game {
     }
 
     pub fn play_hand(&mut self) {
+        clear_screen();
         let mut deck = Deck::new_shuffled();
         // reset per-player state
         for p in self.players.iter_mut() {
@@ -193,7 +194,13 @@ impl Game {
             clear_screen();
 
             let can_continue = self.players.iter().enumerate()
-                .any(|(i,p)| order.contains(&i) && !p.folded && !p.all_in && (p.contributed_this_round < current_bet));
+                .any(|(i, p)| {
+                    order.contains(&i)
+                        && !p.folded
+                        && !p.all_in
+                        && (p.contributed_this_round < current_bet
+                            || (current_bet == 0 && !seen_since_raise[i]))
+                });
             let need_more = if let Some(lr) = last_raiser { !seen_since_raise[lr] } else { false };
             let someone_can_act = self.players.iter().enumerate()
                 .any(|(i,p)| order.contains(&i) && p.can_act());
@@ -213,7 +220,6 @@ impl Game {
             }
 
             let call_diff = current_bet.saturating_sub(self.players[pid].contributed_this_round);
-            let chips = self.players[pid].chips;
 
             let total_pot = pot + self.players.iter().map(|pl| pl.contributed_this_round).sum::<u32>();
             println!("Pot: {}", total_pot);
@@ -225,67 +231,79 @@ impl Game {
                 println!("  {:<10}: {}", pl.name, act);
             }
             let hand_str = self.players[pid].hand.as_ref().map(|h| h.fmt_inline()).unwrap_or_default();
-            println!("{} to act. Hand: [{}]. You have {} seconds.", self.players[pid].name, hand_str, self.settings.turn_timeout_secs);
-            let allowed = if current_bet == self.players[pid].contributed_this_round {
-                format!("check, bet <amount >= {}>, fold", min_bet)
-            } else {
-                format!("call, raise <amount >= {}>, fold, all-in", min_bet)
-            };
-            println!("Allowed: {}  | Type 'quit' to exit.", allowed);
-            let prompt = format!("(call {} chips) > ", call_diff);
-
-            let line = read_line_timeout(&prompt, self.settings.turn_timeout_secs).unwrap_or_default();
-            let action = line.trim().to_lowercase();
-
-            // quit/exit command with confirmation
-            if action == "quit" || action == "exit" {
-                println!("Are you sure you want to quit? [y/N]");
-                let ans = read_line_timeout("> ", 0).unwrap_or_default();
-                if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
-                    process::exit(0);
+            println!(
+                "{} to act. Hand: [{}]. Stack: {} chips. You have {} seconds.",
+                self.players[pid].name,
+                hand_str,
+                self.players[pid].chips,
+                self.settings.turn_timeout_secs
+            );
+            // numeric action selection with validation
+            let choice: u32;
+            let mut amount: u32 = 0;
+            loop {
+                if current_bet == self.players[pid].contributed_this_round {
+                    println!("Actions: [0] Check  [1] Bet <amt>=min {}  [2] Fold  [3] All-in", self.settings.min_bet);
                 } else {
-                    println!("Continuing game.");
-                    continue; // same player still to act
+                    println!("Actions: [0] Call {}  [1] Raise <amt>=min {}  [2] Fold  [3] All-in", call_diff, self.settings.min_bet);
+                }
+                println!("Type action number (and amount if needed). Type 'quit' to exit.");
+                let prompt = if current_bet == self.players[pid].contributed_this_round {
+                    "> ".to_string()
+                } else {
+                    format!("(call {} chips) > ", call_diff)
+                };
+                let line = read_line_timeout(&prompt, self.settings.turn_timeout_secs).unwrap_or_default();
+                let s = line.trim().to_lowercase();
+                if s == "quit" || s == "exit" {
+                    println!("Are you sure you want to quit? [y/N]");
+                    let ans = read_line_timeout("> ", 0).unwrap_or_default();
+                    if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
+                        process::exit(0);
+                    } else {
+                        println!("Continuing game.");
+                        continue;
+                    }
+                }
+                if s.is_empty() {
+                    choice = 2; // timeout -> fold
+                    break;
+                }
+                let mut parts = s.split_whitespace();
+                if let Some(cstr) = parts.next() {
+                    if let Ok(c) = cstr.parse::<u32>() {
+                        match c {
+                            0 => { choice = 0; break; }
+                            1 => {
+                                if let Some(astr) = parts.next() {
+                                    if let Ok(a) = astr.parse::<u32>() {
+                                        amount = a;
+                                        choice = 1;
+                                        break;
+                                    }
+                                }
+                                println!("Need an amount for that action.");
+                            }
+                            2 => { choice = 2; break; }
+                            3 => { choice = 3; break; }
+                            _ => println!("Invalid selection."),
+                        }
+                    } else {
+                        println!("Invalid selection.");
+                    }
+                } else {
+                    println!("Invalid selection.");
                 }
             }
 
-            let mut fold = false;
-            let mut check = false;
-            let mut call = false;
-            let mut raise_amt: u32 = 0;
-            let mut bet_amt: u32 = 0;
-            let mut all_in = false;
-
-            if action.is_empty() {
-                println!("Time out or empty input: fold.");
-                fold = true;
-            } else if action.starts_with("fold") {
-                fold = true;
-            } else if action.starts_with("check") && current_bet == self.players[pid].contributed_this_round {
-                check = true;
-            } else if action.starts_with("call") && current_bet > self.players[pid].contributed_this_round {
-                call = true;
-            } else if action.starts_with("all") {
-                all_in = true;
-            } else if action.starts_with("raise") {
-                let amt = action.split_whitespace().nth(1).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
-                raise_amt = amt;
-            } else if action.starts_with("bet") && current_bet == self.players[pid].contributed_this_round {
-                let amt = action.split_whitespace().nth(1).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
-                bet_amt = amt;
-            } else {
-                println!("Unrecognized/invalid action. Fold by default.");
-                fold = true;
-            }
-
-            if fold {
+            if choice == 2 {
                 self.players[pid].folded = true;
                 self.players[pid].last_action = "folded".to_string();
                 println!("{} folds.", self.players[pid].name);
-            } else if check {
+            } else if choice == 0 && current_bet == self.players[pid].contributed_this_round {
                 self.players[pid].last_action = "checked".to_string();
                 println!("{} checks.", self.players[pid].name);
-            } else if call {
+            } else if choice == 0 {
                 let mut need = call_diff;
                 if need > self.players[pid].chips { need = self.players[pid].chips; }
                 self.players[pid].chips -= need;
@@ -299,7 +317,7 @@ impl Game {
                     self.players[pid].last_action = format!("called {}", need);
                 }
                 println!("{} calls {}.", self.players[pid].name, need);
-            } else if all_in {
+            } else if choice == 3 {
                 let chips_now = self.players[pid].chips;
                 let need = call_diff.min(chips_now);
                 let raise_by = chips_now.saturating_sub(need);
@@ -315,39 +333,38 @@ impl Game {
                 }
                 self.players[pid].last_action = format!("all-in {}", need + raise_by);
                 println!("{} goes all-in for {}.", self.players[pid].name, need + raise_by);
-            } else if bet_amt > 0 && current_bet == self.players[pid].contributed_this_round {
+            } else if choice == 1 && current_bet == self.players[pid].contributed_this_round {
                 let chips_now = self.players[pid].chips;
-                if bet_amt == chips_now {
-                    // treat as all-in bet
+                if amount == chips_now {
                     self.players[pid].chips = 0;
-                    self.players[pid].contributed_this_round += bet_amt;
-                    self.players[pid].contributed_total += bet_amt;
-                    pot += bet_amt;
+                    self.players[pid].contributed_this_round += amount;
+                    self.players[pid].contributed_total += amount;
+                    pot += amount;
                     self.players[pid].all_in = true;
                     current_bet = self.players[pid].contributed_this_round;
                     last_raiser = Some(pid);
                     seen_since_raise.fill(false);
-                    self.players[pid].last_action = format!("all-in {}", bet_amt);
-                    println!("{} bets {} and is all-in.", self.players[pid].name, bet_amt);
-                } else if bet_amt < min_bet || bet_amt > chips_now {
-                    println!("Invalid bet. Must be between {} and your chips.", min_bet);
+                    self.players[pid].last_action = format!("all-in {}", amount);
+                    println!("{} bets {} and is all-in.", self.players[pid].name, amount);
+                } else if amount < self.settings.min_bet || amount > chips_now {
+                    println!("Invalid bet. Must be between {} and your chips.", self.settings.min_bet);
                     self.players[pid].folded = true;
                     self.players[pid].last_action = "folded".to_string();
                     println!("{} folds (invalid bet).", self.players[pid].name);
                 } else {
-                    self.players[pid].chips -= bet_amt;
-                    self.players[pid].contributed_this_round += bet_amt;
-                    self.players[pid].contributed_total += bet_amt;
-                    pot += bet_amt;
+                    self.players[pid].chips -= amount;
+                    self.players[pid].contributed_this_round += amount;
+                    self.players[pid].contributed_total += amount;
+                    pot += amount;
                     current_bet = self.players[pid].contributed_this_round;
                     last_raiser = Some(pid);
                     seen_since_raise.fill(false);
-                    self.players[pid].last_action = format!("bet {}", bet_amt);
-                    println!("{} bets {}.", self.players[pid].name, bet_amt);
+                    self.players[pid].last_action = format!("bet {}", amount);
+                    println!("{} bets {}.", self.players[pid].name, amount);
                 }
-            } else if raise_amt > 0 && current_bet > self.players[pid].contributed_this_round {
+            } else if choice == 1 {
                 let chips_now = self.players[pid].chips;
-                let need = call_diff + raise_amt;
+                let need = call_diff + amount;
                 if need > chips_now {
                     println!("Insufficient chips for that raise. Going all-in for {}.", chips_now);
                     let to_put = chips_now;
@@ -362,8 +379,8 @@ impl Game {
                         seen_since_raise.fill(false);
                     }
                     self.players[pid].last_action = format!("all-in {}", to_put);
-                } else if raise_amt < min_bet {
-                    println!("Invalid raise. Minimum is {}.", min_bet);
+                } else if amount < self.settings.min_bet {
+                    println!("Invalid raise. Minimum is {}.", self.settings.min_bet);
                     self.players[pid].folded = true;
                     self.players[pid].last_action = "folded".to_string();
                     println!("{} folds (invalid raise).", self.players[pid].name);
@@ -376,12 +393,8 @@ impl Game {
                     last_raiser = Some(pid);
                     seen_since_raise.fill(false);
                     self.players[pid].last_action = format!("raised to {}", current_bet);
-                    println!("{} raises {} (total to {}).", self.players[pid].name, raise_amt, current_bet);
+                    println!("{} raises {} (total to {}).", self.players[pid].name, amount, current_bet);
                 }
-            } else {
-                println!("Invalid/illegal action in this spot. Fold.");
-                self.players[pid].folded = true;
-                self.players[pid].last_action = "folded".to_string();
             }
 
             seen_since_raise[pid] = true;
