@@ -7,6 +7,7 @@ use crate::hand;
 use crate::player::Player;
 use crate::timer::read_line_timeout;
 
+#[derive(Copy, Clone)]
 pub struct GameSettings {
     pub num_players: usize,
     pub starting_chips: u32,
@@ -35,10 +36,17 @@ impl Game {
         }
     }
 
-    pub fn setup_players(&mut self) {
+    pub fn setup_players(&mut self, names: Option<&[String]>) {
         self.players.clear();
         for i in 0..self.settings.num_players {
             let mut player = Player::new(i, self.settings.starting_chips);
+            if let Some(list) = names {
+                if let Some(name) = list.get(i) {
+                    player.name = name.clone();
+                    self.players.push(player);
+                    continue;
+                }
+            }
             loop {
                 println!("Enter name for Player {} (max 20 chars):", i + 1);
                 if let Some(line) = read_line_timeout("> ", 0) {
@@ -447,7 +455,10 @@ impl Game {
                     next_num += 1;
                     if can_raise {
                         bet_num = next_num;
-                        opts.push(format!("[{}] Bet <amt>=min {}", bet_num, self.settings.min_bet));
+                        opts.push(format!(
+                            "[{}] Bet <amt>=min {}",
+                            bet_num, self.settings.min_bet
+                        ));
                         next_num += 1;
                     }
                 } else {
@@ -460,7 +471,10 @@ impl Game {
                     next_num += 1;
                     if can_raise {
                         bet_num = next_num;
-                        opts.push(format!("[{}] Raise <amt>=min {}", bet_num, self.settings.min_bet));
+                        opts.push(format!(
+                            "[{}] Raise <amt>=min {}",
+                            bet_num, self.settings.min_bet
+                        ));
                         next_num += 1;
                     }
                 }
@@ -872,9 +886,7 @@ impl Game {
                     .split_whitespace()
                     .filter_map(|t| t.parse::<usize>().ok())
                     .collect();
-                if idxs.is_empty()
-                    || idxs.iter().any(|&i| i == 0 || i > 5)
-                {
+                if idxs.is_empty() || idxs.iter().any(|&i| i == 0 || i > 5) {
                     println!("Invalid option.");
                     continue;
                 }
