@@ -4,9 +4,9 @@ use std::process;
 
 use crate::deck::Deck;
 use crate::hand;
+use crate::logger::TableLog;
 use crate::player::Player;
 use crate::timer::read_line_timeout;
-use crate::logger::TableLog;
 
 #[derive(Copy, Clone)]
 pub struct GameSettings {
@@ -46,8 +46,7 @@ impl Game {
     fn log_action(&mut self, pid: usize, action: &str) {
         let stack = self.players[pid].chips;
         let name = self.players[pid].name.clone();
-        self
-            .logger
+        self.logger
             .log_action(&name, &format!("{} (stack: {})", action, stack));
     }
 
@@ -193,7 +192,11 @@ impl Game {
             self.log_action(winner, &format!("wins {} chips as all others folded", pot));
             for i in 0..self.players.len() {
                 if let Some(h) = self.players[i].hand.as_ref() {
-                    let note = if i == winner { "final hand" } else { "final hand (folded)" };
+                    let note = if i == winner {
+                        "final hand"
+                    } else {
+                        "final hand (folded)"
+                    };
                     self.log_private(i, &format!("{} [{}]", note, h.fmt_inline()));
                 }
             }
@@ -231,7 +234,11 @@ impl Game {
             self.log_action(winner, &format!("wins {} chips as all others folded", pot));
             for i in 0..self.players.len() {
                 if let Some(h) = self.players[i].hand.as_ref() {
-                    let note = if i == winner { "final hand" } else { "final hand (folded)" };
+                    let note = if i == winner {
+                        "final hand"
+                    } else {
+                        "final hand (folded)"
+                    };
                     self.log_private(i, &format!("{} [{}]", note, h.fmt_inline()));
                 }
             }
@@ -278,6 +285,7 @@ impl Game {
             prev = contrib;
         }
 
+        clear_screen();
         println!("Showdown:");
         for (amt, elig) in pots {
             if elig.is_empty() {
@@ -302,10 +310,18 @@ impl Game {
             }
             println!("  Pot of {} chips:", amt);
             for &pid in &best {
-                let hand_str = self.players[pid].hand.as_ref().unwrap().fmt_inline();
+                let hand_ref = self.players[pid].hand.as_ref().unwrap();
+                let hand_str = hand_ref.fmt_inline();
+                let hand_type = hand::describe(hand_ref);
                 let name = self.players[pid].name.clone();
-                println!("    {} wins {} with [{}]", name, share, hand_str);
-                self.log_action(pid, &format!("wins {} with [{}]", share, hand_str));
+                println!(
+                    "    {} wins {} with [{}] {}",
+                    name, share, hand_str, hand_type
+                );
+                self.log_action(
+                    pid,
+                    &format!("wins {} with [{}] {}", share, hand_str, hand_type),
+                );
             }
         }
 
@@ -449,11 +465,7 @@ impl Game {
                 .any(|(_, p)| p.chips + p.contributed_this_round > current_bet);
             let can_raise = chips_after_call >= self.settings.min_bet && others_can_call_more;
 
-           let total_pot: u32 = self
-                .players
-                .iter()
-                .map(|pl| pl.contributed_total)
-                .sum();
+            let total_pot: u32 = self.players.iter().map(|pl| pl.contributed_total).sum();
             let active_players: Vec<String> = self
                 .players
                 .iter()

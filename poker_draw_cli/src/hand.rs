@@ -10,10 +10,14 @@ pub struct Hand {
 
 impl Hand {
     pub fn new() -> Self {
-        Self { cards: Vec::with_capacity(5) }
+        Self {
+            cards: Vec::with_capacity(5),
+        }
     }
 
-    pub fn add(&mut self, c: Card) { self.cards.push(c); }
+    pub fn add(&mut self, c: Card) {
+        self.cards.push(c);
+    }
 
     pub fn discard_indices(&mut self, mut idxs: Vec<usize>) {
         idxs.sort_unstable();
@@ -27,7 +31,11 @@ impl Hand {
     }
 
     pub fn fmt_inline(&self) -> String {
-        self.cards.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(" ")
+        self.cards
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 
@@ -60,16 +68,22 @@ impl PartialEq for Evaluated {
 impl Ord for Evaluated {
     fn cmp(&self, other: &Self) -> Ordering {
         let cat_cmp = self.cat.cmp(&other.cat);
-        if cat_cmp != Ordering::Equal { return cat_cmp; }
+        if cat_cmp != Ordering::Equal {
+            return cat_cmp;
+        }
         self.keys.cmp(&other.keys)
     }
 }
 
 impl PartialOrd for Evaluated {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
-fn rank_val(r: Rank) -> u8 { r as u8 }
+fn rank_val(r: Rank) -> u8 {
+    r as u8
+}
 
 pub fn evaluate(hand: &Hand) -> Evaluated {
     let cards = &hand.cards;
@@ -98,24 +112,28 @@ pub fn evaluate(hand: &Hand) -> Evaluated {
         is_straight = true;
     } else {
         // wheel: A(14),5,4,3,2 -> treat Ace as 1
-        if rank_vals == vec![2,3,4,5,14] {
+        if rank_vals == vec![2, 3, 4, 5, 14] {
             is_straight = true;
             high_in_straight = 5; // 5-high straight
         }
     }
 
     // counts sorted by (count desc, rank desc)
-    let mut counts: Vec<(u8,u8)> = by_rank.into_iter().collect(); // (rank, count)
-    counts.sort_by(|a,b| {
+    let mut counts: Vec<(u8, u8)> = by_rank.into_iter().collect(); // (rank, count)
+    counts.sort_by(|a, b| {
         let c = b.1.cmp(&a.1);
-        if c != Ordering::Equal { return c; }
+        if c != Ordering::Equal {
+            return c;
+        }
         b.0.cmp(&a.0) // higher rank first
     });
 
     let keys_from_counts = || {
         let mut ks = Vec::with_capacity(5);
         for (rank, cnt) in counts.iter() {
-            for _ in 0..*cnt { ks.push(*rank); }
+            for _ in 0..*cnt {
+                ks.push(*rank);
+            }
         }
         // pad to 5
         ks.resize(5, 0);
@@ -124,34 +142,62 @@ pub fn evaluate(hand: &Hand) -> Evaluated {
 
     if is_straight && is_flush {
         // keys: high card of straight, rest zeros
-        return Evaluated { cat: Category::StraightFlush, keys: [high_in_straight,0,0,0,0] };
+        return Evaluated {
+            cat: Category::StraightFlush,
+            keys: [high_in_straight, 0, 0, 0, 0],
+        };
     }
 
     if counts[0].1 == 4 {
         // four kind: quad rank, kicker
         let quad = counts[0].0;
-        let kicker = counts.iter().find(|(_,c)| *c==1).map(|(r,_)| *r).unwrap_or(0);
-        return Evaluated { cat: Category::FourKind, keys: [quad, quad, quad, quad, kicker] };
+        let kicker = counts
+            .iter()
+            .find(|(_, c)| *c == 1)
+            .map(|(r, _)| *r)
+            .unwrap_or(0);
+        return Evaluated {
+            cat: Category::FourKind,
+            keys: [quad, quad, quad, quad, kicker],
+        };
     }
 
     if counts[0].1 == 3 && counts[1].1 == 2 {
         // full house: trips rank, pair rank
-        return Evaluated { cat: Category::FullHouse, keys: [counts[0].0, counts[0].0, counts[0].0, counts[1].0, counts[1].0] };
+        return Evaluated {
+            cat: Category::FullHouse,
+            keys: [
+                counts[0].0,
+                counts[0].0,
+                counts[0].0,
+                counts[1].0,
+                counts[1].0,
+            ],
+        };
     }
 
     if is_flush {
         // high cards
         let mut ks: Vec<u8> = cards.iter().map(|c| rank_val(c.rank)).collect();
-        ks.sort_unstable_by(|a,b| b.cmp(a));
-        return Evaluated { cat: Category::Flush, keys: [ks[0],ks[1],ks[2],ks[3],ks[4]] };
+        ks.sort_unstable_by(|a, b| b.cmp(a));
+        return Evaluated {
+            cat: Category::Flush,
+            keys: [ks[0], ks[1], ks[2], ks[3], ks[4]],
+        };
     }
 
     if is_straight {
-        return Evaluated { cat: Category::Straight, keys: [high_in_straight,0,0,0,0] };
+        return Evaluated {
+            cat: Category::Straight,
+            keys: [high_in_straight, 0, 0, 0, 0],
+        };
     }
 
     if counts[0].1 == 3 {
-        return Evaluated { cat: Category::ThreeKind, keys: keys_from_counts() };
+        return Evaluated {
+            cat: Category::ThreeKind,
+            keys: keys_from_counts(),
+        };
     }
 
     if counts[0].1 == 2 && counts[1].1 == 2 {
@@ -159,20 +205,86 @@ pub fn evaluate(hand: &Hand) -> Evaluated {
         // counts already sorted
         let highp = counts[0].0;
         let lowp = counts[1].0;
-        let kicker = counts.iter().find(|(_,c)| *c==1).map(|(r,_)| *r).unwrap_or(0);
-        return Evaluated { cat: Category::TwoPair, keys: [highp, highp, lowp, lowp, kicker] };
+        let kicker = counts
+            .iter()
+            .find(|(_, c)| *c == 1)
+            .map(|(r, _)| *r)
+            .unwrap_or(0);
+        return Evaluated {
+            cat: Category::TwoPair,
+            keys: [highp, highp, lowp, lowp, kicker],
+        };
     }
 
     if counts[0].1 == 2 {
-        return Evaluated { cat: Category::OnePair, keys: keys_from_counts() };
+        return Evaluated {
+            cat: Category::OnePair,
+            keys: keys_from_counts(),
+        };
     }
 
     // high card
     let mut ks: Vec<u8> = cards.iter().map(|c| rank_val(c.rank)).collect();
-    ks.sort_unstable_by(|a,b| b.cmp(a));
-    Evaluated { cat: Category::HighCard, keys: [ks[0],ks[1],ks[2],ks[3],ks[4]] }
+    ks.sort_unstable_by(|a, b| b.cmp(a));
+    Evaluated {
+        cat: Category::HighCard,
+        keys: [ks[0], ks[1], ks[2], ks[3], ks[4]],
+    }
 }
 
 pub fn compare(h1: &Hand, h2: &Hand) -> std::cmp::Ordering {
     evaluate(h1).cmp(&evaluate(h2))
+}
+
+fn rank_name(r: u8) -> &'static str {
+    match r {
+        2 => "2",
+        3 => "3",
+        4 => "4",
+        5 => "5",
+        6 => "6",
+        7 => "7",
+        8 => "8",
+        9 => "9",
+        10 => "10",
+        11 => "J",
+        12 => "Q",
+        13 => "K",
+        14 => "A",
+        _ => "?",
+    }
+}
+
+fn rank_name_plural(r: u8) -> String {
+    match r {
+        2..=10 => format!("{}s", rank_name(r)),
+        11 => "Jacks".to_string(),
+        12 => "Queens".to_string(),
+        13 => "Kings".to_string(),
+        14 => "Aces".to_string(),
+        _ => "?s".to_string(),
+    }
+}
+
+pub fn describe(hand: &Hand) -> String {
+    let ev = evaluate(hand);
+    match ev.cat {
+        Category::HighCard => format!("{} high", rank_name(ev.keys[0])),
+        Category::OnePair => format!("two {}", rank_name_plural(ev.keys[0])),
+        Category::TwoPair => format!(
+            "two pair {} and {}",
+            rank_name_plural(ev.keys[0]),
+            rank_name_plural(ev.keys[2])
+        ),
+        Category::ThreeKind => format!("three {}", rank_name_plural(ev.keys[0])),
+        Category::Straight => format!("{} high straight", rank_name(ev.keys[0])),
+        Category::Flush => format!("{} high flush", rank_name(ev.keys[0])),
+        Category::FullHouse => format!(
+            "full house {} full of {}",
+            rank_name_plural(ev.keys[0]),
+            rank_name_plural(ev.keys[3])
+        ),
+        Category::FourKind => format!("four {}", rank_name_plural(ev.keys[0])),
+        Category::StraightFlush => format!("{} high straight flush", rank_name(ev.keys[0])),
+    }
 }
