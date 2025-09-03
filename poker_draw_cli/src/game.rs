@@ -183,6 +183,7 @@ impl Game {
         }
         let mut current_bet: u32 = 0;
         let mut last_raiser: Option<usize> = None;
+        let min_bet = self.settings.min_bet;
 
         let order = self.seat_order_from(self.next_seat(self.dealer));
         let mut idx = 0usize;
