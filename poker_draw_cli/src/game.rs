@@ -85,6 +85,11 @@ impl Game {
             if let Some(w) = self.find_table_winner() {
                 return w.clone();
             }
+            println!("Shuffle up and deal next hand? [y/N]");
+            let ans = read_line_timeout("> ", 0).unwrap_or_default();
+            if !matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
+                process::exit(0);
+            }
         }
     }
 
@@ -121,6 +126,7 @@ impl Game {
         clear_screen();
         self.logger.start_hand();
         self.last_fold_was_timeout = false;
+        let starting_chips: Vec<u32> = self.players.iter().map(|p| p.chips).collect();
         let mut deck = Deck::new_shuffled();
         // reset per-player state
         for p in self.players.iter_mut() {
@@ -361,6 +367,8 @@ impl Game {
             }
         }
 
+        self.display_results(&starting_chips);
+
         // Clear hands
         for p in self.players.iter_mut() {
             p.hand = None;
@@ -388,6 +396,42 @@ impl Game {
                 if let Some(h) = self.players[pid].hand.as_ref() {
                     println!("{} reveals [{}]", self.players[pid].name, h.fmt_inline());
                 }
+            }
+        }
+    }
+
+    fn display_results(&self, starting_chips: &[u32]) {
+        let mut infos: Vec<(usize, i32, Option<hand::Hand>)> = self
+            .players
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let delta = p.chips as i32 - starting_chips[i] as i32;
+                (i, delta, p.hand.clone())
+            })
+            .collect();
+
+        infos.sort_by(|a, b| match (&a.2, &b.2) {
+            (Some(ref ha), Some(ref hb)) => hand::compare(hb, ha),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        });
+
+        println!("Hand results:");
+        for (i, delta, hand_opt) in infos {
+            let name = &self.players[i].name;
+            let delta_str = if delta >= 0 {
+                format!("+{}", delta)
+            } else {
+                delta.to_string()
+            };
+            if let Some(ref h) = hand_opt {
+                let hand_str = h.fmt_inline();
+                let hand_type = hand::describe(h);
+                println!("  {} [{}] {} ({})", name, hand_str, hand_type, delta_str);
+            } else {
+                println!("  {} folded ({})", name, delta_str);
             }
         }
     }
