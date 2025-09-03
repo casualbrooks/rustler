@@ -1,0 +1,95 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Clone)]
+pub struct LogEntry {
+    pub timestamp: u128,
+    pub player: String,
+    pub action: String,
+}
+
+impl LogEntry {
+    fn new(player: &str, action: &str) -> Self {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        Self {
+            timestamp: ts,
+            player: player.to_string(),
+            action: action.to_string(),
+        }
+    }
+}
+
+pub struct HandLog {
+    pub events: Vec<LogEntry>,
+    pub private: Vec<LogEntry>,
+}
+
+impl HandLog {
+    fn new() -> Self {
+        Self {
+            events: Vec::new(),
+            private: Vec::new(),
+        }
+    }
+}
+
+pub struct TableLog {
+    pub table_name: String,
+    pub hands: Vec<HandLog>,
+}
+
+impl TableLog {
+    pub fn new() -> Self {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        Self {
+            table_name: format!("table-{}", ts),
+            hands: Vec::new(),
+        }
+    }
+
+    pub fn start_hand(&mut self) {
+        self.hands.push(HandLog::new());
+    }
+
+    fn current_mut(&mut self) -> Option<&mut HandLog> {
+        self.hands.last_mut()
+    }
+
+    pub fn log_action(&mut self, player: &str, action: &str) {
+        if let Some(h) = self.current_mut() {
+            h.events.push(LogEntry::new(player, action));
+        }
+    }
+
+    pub fn log_private(&mut self, player: &str, action: &str) {
+        if let Some(h) = self.current_mut() {
+            h.private.push(LogEntry::new(player, action));
+        }
+    }
+
+    pub fn dump(&self) {
+        println!("=== Table Log: {} ===", self.table_name);
+        for (i, hand) in self.hands.iter().enumerate() {
+            println!("-- Hand {} --", i + 1);
+            for e in &hand.events {
+                println!("[{}] {}: {}", e.timestamp, e.player, e.action);
+            }
+        }
+    }
+
+    pub fn dump_private(&self) {
+        println!("=== Private Card Log: {} ===", self.table_name);
+        for (i, hand) in self.hands.iter().enumerate() {
+            println!("-- Hand {} --", i + 1);
+            for e in &hand.private {
+                println!("[{}] {}: {}", e.timestamp, e.player, e.action);
+            }
+        }
+    }
+}
+
