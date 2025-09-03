@@ -23,6 +23,7 @@ pub struct Game {
     pub names: Vec<String>,
     dealer: usize,
     pub logger: TableLog,
+    last_fold_was_timeout: bool,
 }
 
 fn clear_screen() {
@@ -38,6 +39,7 @@ impl Game {
             names: Vec::new(),
             dealer: 0,
             logger: TableLog::new(),
+            last_fold_was_timeout: false,
         }
     }
 
@@ -119,6 +121,7 @@ impl Game {
     pub fn play_hand(&mut self) {
         clear_screen();
         self.logger.start_hand();
+        self.last_fold_was_timeout = false;
         let mut deck = Deck::new_shuffled();
         // reset per-player state
         for p in self.players.iter_mut() {
@@ -194,7 +197,9 @@ impl Game {
                     self.log_private(i, &format!("{} [{}]", note, h.fmt_inline()));
                 }
             }
-            self.offer_reveal(winner);
+            if !self.last_fold_was_timeout {
+                self.offer_reveal(winner);
+            }
             for p in self.players.iter_mut() {
                 p.hand = None;
             }
@@ -230,7 +235,9 @@ impl Game {
                     self.log_private(i, &format!("{} [{}]", note, h.fmt_inline()));
                 }
             }
-            self.offer_reveal(winner);
+            if !self.last_fold_was_timeout {
+                self.offer_reveal(winner);
+            }
             for p in self.players.iter_mut() {
                 p.hand = None;
             }
@@ -375,6 +382,7 @@ impl Game {
         self.players[pid].last_action = "quit".to_string();
         self.log_action(pid, &self.players[pid].last_action.clone());
         println!("{} leaves the game.", self.players[pid].name);
+        self.last_fold_was_timeout = false;
     }
 
     fn betting_round(&mut self, title: &str, _deck: &mut Deck) -> u32 {
@@ -661,14 +669,21 @@ impl Game {
             }
 
             if choice == 2 {
+                let pname = self.players[pid].name.clone();
                 self.players[pid].folded = true;
-                self.players[pid].last_action = "folded".to_string();
-                self.players[pid].revealed_on_fold = reveal_idxs.clone();
-                self.log_action(pid, &self.players[pid].last_action.clone());
-                if timed_out {
-                    println!("{} folds (timeout).", self.players[pid].name);
+                self.players[pid].last_action = if timed_out {
+                    "folded (timeout)".to_string()
                 } else {
-                    println!("{} folds.", self.players[pid].name);
+                    "folded".to_string()
+                };
+                self.players[pid].revealed_on_fold = reveal_idxs.clone();
+                let action_log = self.players[pid].last_action.clone();
+                self.log_action(pid, &action_log);
+                self.last_fold_was_timeout = timed_out;
+                if timed_out {
+                    println!("{} folds (timeout).", pname);
+                } else {
+                    println!("{} folds.", pname);
                     if !reveal_idxs.is_empty() {
                         let hand_str = self.players[pid]
                             .hand
@@ -902,8 +917,10 @@ impl Game {
                     Some(l) => l,
                     None => {
                         self.players[pid].folded = true;
-                        self.players[pid].last_action = "folded".to_string();
-                        self.log_action(pid, &self.players[pid].last_action.clone());
+                        self.players[pid].last_action = "folded (timeout)".to_string();
+                        let action_log = self.players[pid].last_action.clone();
+                        self.log_action(pid, &action_log);
+                        self.last_fold_was_timeout = true;
                         println!("{} folds (timeout).", pname);
                         break;
                     }
