@@ -498,11 +498,11 @@ impl Game {
             loop {
                 timed_out = false;
                 let mut next_num = 1;
-                let mut call_num = 0;
+                let mut call_num: u32;
                 let mut bet_num = 0;
-                let mut fold_num = 0;
+                let mut fold_num: u32;
                 let mut allin_num: Option<u32> = None;
-                let mut quit_num = 0;
+                let mut quit_num: u32;
                 let mut opts = vec!["[0] View hand".to_string()];
 
                 if current_bet == self.players[pid].contributed_this_round {
