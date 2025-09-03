@@ -85,3 +85,18 @@ impl TableLog {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn logs_public_and_private_actions() {
+        let mut log = TableLog::new();
+        log.start_hand();
+        log.log_action("Alice", "bets 10");
+        log.log_private("Alice", "Ah Kd");
+        assert_eq!(log.hands.len(), 1);
+        assert_eq!(log.hands[0].events[0].player, "Alice");
+        assert_eq!(log.hands[0].private[0].action, "Ah Kd");
+    }
+}
