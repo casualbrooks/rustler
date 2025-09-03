@@ -106,11 +106,39 @@ impl Game {
         // First betting round
         pot += self.betting_round("First betting round", &mut deck);
 
+        // If only one player remains after the first round, award the pot
+        let remaining: Vec<usize> = self.players.iter().enumerate()
+            .filter(|(_, p)| !p.folded && p.hand.is_some())
+            .map(|(i, _)| i)
+            .collect();
+        if remaining.len() == 1 {
+            let winner = remaining[0];
+            self.players[winner].chips += pot;
+            println!("{} wins {} chips as all others folded.", self.players[winner].name, pot);
+            for p in self.players.iter_mut() { p.hand = None; }
+            self.rotate_dealer();
+            return;
+        }
+
         // Draw phase
         self.draw_phase(&mut deck);
 
         // Second betting round
         pot += self.betting_round("Second betting round", &mut deck);
+
+        // Check again after the second round for a single remaining player
+        let remaining: Vec<usize> = self.players.iter().enumerate()
+            .filter(|(_, p)| !p.folded && p.hand.is_some())
+            .map(|(i, _)| i)
+            .collect();
+        if remaining.len() == 1 {
+            let winner = remaining[0];
+            self.players[winner].chips += pot;
+            println!("{} wins {} chips as all others folded.", self.players[winner].name, pot);
+            for p in self.players.iter_mut() { p.hand = None; }
+            self.rotate_dealer();
+            return;
+        }
 
         // Showdown
         let mut contenders: Vec<usize> = self.players.iter().enumerate()
