@@ -433,27 +433,55 @@ impl Game {
             let mut reveal_idxs: Vec<usize> = Vec::new();
             loop {
                 timed_out = false;
+                let mut next_num = 1;
+                let mut call_num = 0;
+                let mut bet_num = 0;
+                let mut fold_num = 0;
+                let mut allin_num: Option<u32> = None;
+                let mut quit_num = 0;
+                let mut opts = vec!["[0] View hand".to_string()];
+
                 if current_bet == self.players[pid].contributed_this_round {
+                    call_num = next_num;
+                    opts.push(format!("[{}] Check", call_num));
+                    next_num += 1;
                     if can_raise {
-                        println!(
-                            "Actions: [0] Check  [1] Bet <amt>=min {}  [2] Fold  [3] All-in  [4] View cards",
-                            self.settings.min_bet
-                        );
-                    } else {
-                        println!("Actions: [0] Check  [2] Fold  [3] All-in  [4] View cards");
+                        bet_num = next_num;
+                        opts.push(format!("[{}] Bet <amt>=min {}", bet_num, self.settings.min_bet));
+                        next_num += 1;
                     }
-                } else if can_raise {
-                    println!(
-                        "Actions: [0] Call {}  [1] Raise <amt>=min {}  [2] Fold  [3] All-in  [4] View cards",
-                        call_diff, self.settings.min_bet
-                    );
                 } else {
-                    println!(
-                        "Actions: [0] Call {}  [2] Fold  [3] All-in  [4] View cards",
-                        call_diff
-                    );
+                    call_num = next_num;
+                    let mut call_label = format!("Call {}", call_diff);
+                    if call_diff >= self.players[pid].chips {
+                        call_label = format!("Call {} (all-in)", call_diff);
+                    }
+                    opts.push(format!("[{}] {}", call_num, call_label));
+                    next_num += 1;
+                    if can_raise {
+                        bet_num = next_num;
+                        opts.push(format!("[{}] Raise <amt>=min {}", bet_num, self.settings.min_bet));
+                        next_num += 1;
+                    }
                 }
-                println!("Type action number (and amount if needed). Type 'quit' to fold and leave game or 'exit' to quit program.");
+
+                fold_num = next_num;
+                opts.push(format!("[{}] Fold", fold_num));
+                next_num += 1;
+
+                if current_bet == self.players[pid].contributed_this_round
+                    || call_diff < self.players[pid].chips
+                {
+                    allin_num = Some(next_num);
+                    opts.push(format!("[{}] All-in", next_num));
+                    next_num += 1;
+                }
+
+                quit_num = next_num;
+                opts.push(format!("[{}] Quit game", quit_num));
+
+                println!("Actions: {}", opts.join("  "));
+                println!("Type action number (and amount if needed). Type 'exit' to quit program.");
                 let prompt = if current_bet == self.players[pid].contributed_this_round {
                     "> ".to_string()
                 } else {
@@ -478,21 +506,6 @@ impl Game {
                         continue;
                     }
                 }
-
-                if s == "quit" {
-                    println!("Are you sure you want to leave the game? [y/N]");
-                    let ans = read_line_timeout("> ", 0).unwrap_or_default();
-                    if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
-                        self.handle_player_quit(pid);
-                        seen_since_raise[pid] = true;
-                        idx = (idx + 1) % order.len();
-                        player_left = true;
-                        break;
-                    } else {
-                        println!("Continuing game.");
-                        continue;
-                    }
-                }
                 if timed_out || s.is_empty() {
                     timed_out = true;
                     choice = 2;
@@ -501,49 +514,70 @@ impl Game {
                 let mut parts = s.split_whitespace();
                 if let Some(cstr) = parts.next() {
                     if let Ok(c) = cstr.parse::<u32>() {
-                        if c == 1 && !can_raise {
-                            println!("Invalid option.");
+                        if c == 0 {
+                            let hand_str = self.players[pid]
+                                .hand
+                                .as_ref()
+                                .map(|h| h.fmt_inline())
+                                .unwrap_or_default();
+                            println!("Hand: [{}]", hand_str);
                             continue;
-                        }
-                        match c {
-                            0 => {
-                                choice = 0;
-                                break;
-                            }
-                            1 => {
-                                if let Some(astr) = parts.next() {
-                                    if let Ok(a) = astr.parse::<u32>() {
-                                        amount = a;
-                                        choice = 1;
-                                        break;
-                                    }
+                        } else if c == call_num {
+                            choice = 0;
+                            break;
+                        } else if bet_num != 0 && c == bet_num {
+                            if let Some(astr) = parts.next() {
+                                if let Ok(a) = astr.parse::<u32>() {
+                                    amount = a;
+                                    choice = 1;
+                                    break;
                                 }
-                                println!("Need an amount for that action.");
                             }
-                            2 => {
-                                reveal_idxs = parts
-                                    .filter_map(|p| p.parse::<usize>().ok())
-                                    .filter(|&i| i < 5)
-                                    .collect();
-                                reveal_idxs.sort_unstable();
-                                reveal_idxs.dedup();
-                                choice = 2;
-                                break;
-                            }
-                            3 => {
+                            println!("Need an amount for that action.");
+                        } else if c == fold_num {
+                            reveal_idxs = parts
+                                .filter_map(|p| p.parse::<usize>().ok())
+                                .filter(|&i| i < 5)
+                                .collect();
+                            reveal_idxs.sort_unstable();
+                            reveal_idxs.dedup();
+                            choice = 2;
+                            break;
+                        } else if let Some(ai) = allin_num {
+                            if c == ai {
                                 choice = 3;
                                 break;
+                            } else if c == quit_num {
+                                println!("Are you sure you want to leave the game? [y/N]");
+                                let ans = read_line_timeout("> ", 0).unwrap_or_default();
+                                if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
+                                    self.handle_player_quit(pid);
+                                    seen_since_raise[pid] = true;
+                                    idx = (idx + 1) % order.len();
+                                    player_left = true;
+                                    break;
+                                } else {
+                                    println!("Continuing game.");
+                                    continue;
+                                }
+                            } else {
+                                println!("Invalid option.");
                             }
-                            4 => {
-                                let hand_str = self.players[pid]
-                                    .hand
-                                    .as_ref()
-                                    .map(|h| h.fmt_inline())
-                                    .unwrap_or_default();
-                                println!("Hand: [{}]", hand_str);
+                        } else if c == quit_num {
+                            println!("Are you sure you want to leave the game? [y/N]");
+                            let ans = read_line_timeout("> ", 0).unwrap_or_default();
+                            if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
+                                self.handle_player_quit(pid);
+                                seen_since_raise[pid] = true;
+                                idx = (idx + 1) % order.len();
+                                player_left = true;
+                                break;
+                            } else {
+                                println!("Continuing game.");
                                 continue;
                             }
-                            _ => println!("Invalid option."),
+                        } else {
+                            println!("Invalid option.");
                         }
                     } else {
                         println!("Invalid option.");
@@ -783,7 +817,7 @@ impl Game {
             let mut player_left = false;
             loop {
                 println!(
-                    "Enter indices to discard (0-4, space-separated), 'stand', or 'view'. Type 'quit' to fold and leave game or 'exit' to quit program. You have {} seconds.",
+                    "Enter indices to discard (0-4, space-separated), 'stand', or 'view hand'. Type 'quit' to fold and leave game or 'exit' to quit program. You have {} seconds.",
                     self.settings.turn_timeout_secs
                 );
                 let line_opt = read_line_timeout("> ", self.settings.turn_timeout_secs);
@@ -822,7 +856,8 @@ impl Game {
                     }
                 }
 
-                if s == "view" {
+                if s == "view hand" {
+
                     if let Some(h) = self.players[pid].hand.as_ref() {
                         println!("Hand: [{}]", h.fmt_inline());
                     }
