@@ -318,20 +318,31 @@ impl Game {
                     .iter()
                     .map(|pl| pl.contributed_this_round)
                     .sum::<u32>();
+            let active_players: Vec<String> = self
+                .players
+                .iter()
+                .filter(|p| !p.folded && p.hand.is_some())
+                .map(|p| p.name.clone())
+                .collect();
+            let folded_players: Vec<String> = self
+                .players
+                .iter()
+                .filter(|p| p.folded && p.hand.is_some())
+                .map(|p| p.name.clone())
+                .collect();
+            println!("Players still in: {}", active_players.join(", "));
+            if folded_players.is_empty() {
+                println!("Players folded: none");
+            } else {
+                println!("Players folded: {}", folded_players.join(", "));
+            }
+            println!("Pot: {}", total_pot);
+            println!("Action on: {}", self.players[pid].name);
+            println!("Press Enter to reveal your cards...");
+            let _ = read_line_timeout("> ", 0);
+            clear_screen();
             println!("Pot: {}", total_pot);
             println!("Current bet: {}", current_bet);
-            println!("Last actions:");
-            for (i, pl) in self.players.iter().enumerate() {
-                if pl.chips == 0 || i == pid {
-                    continue;
-                }
-                let act = if pl.last_action.is_empty() {
-                    "none"
-                } else {
-                    pl.last_action.as_str()
-                };
-                println!("  {:<10}: {}", pl.name, act);
-            }
             let hand_str = self.players[pid]
                 .hand
                 .as_ref()
@@ -576,6 +587,34 @@ impl Game {
             if self.players[pid].folded || self.players[pid].all_in {
                 continue;
             }
+            clear_screen();
+            let pot_total: u32 = self
+                .players
+                .iter()
+                .map(|p| p.contributed_total)
+                .sum();
+            let active_players: Vec<String> = self
+                .players
+                .iter()
+                .filter(|p| !p.folded && p.hand.is_some())
+                .map(|p| p.name.clone())
+                .collect();
+            let folded_players: Vec<String> = self
+                .players
+                .iter()
+                .filter(|p| p.folded && p.hand.is_some())
+                .map(|p| p.name.clone())
+                .collect();
+            println!("Players still in: {}", active_players.join(", "));
+            if folded_players.is_empty() {
+                println!("Players folded: none");
+            } else {
+                println!("Players folded: {}", folded_players.join(", "));
+            }
+            println!("Pot: {}", pot_total);
+            println!("Action on: {}", self.players[pid].name);
+            println!("Press Enter to reveal your cards...");
+            let _ = read_line_timeout("> ", 0);
             clear_screen();
             let pname = self.players[pid].name.clone();
             let before = {
