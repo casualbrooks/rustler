@@ -583,10 +583,13 @@ impl Game {
                         continue;
                     }
                 }
-                if timed_out || s.is_empty() {
-                    timed_out = true;
+                if timed_out {
                     choice = 2;
                     break;
+                }
+                if s.is_empty() {
+                    println!("Invalid command.");
+                    continue;
                 }
                 let mut parts = s.split_whitespace();
                 if let Some(cstr) = parts.next() {
@@ -638,7 +641,7 @@ impl Game {
                                     continue;
                                 }
                             } else {
-                                println!("Invalid option.");
+                                println!("Invalid command.");
                             }
                         } else if c == quit_num {
                             println!("Are you sure you want to leave the game? [y/N]");
@@ -654,13 +657,13 @@ impl Game {
                                 continue;
                             }
                         } else {
-                            println!("Invalid option.");
+                            println!("Invalid command.");
                         }
                     } else {
-                        println!("Invalid option.");
+                        println!("Invalid command.");
                     }
                 } else {
-                    println!("Invalid option.");
+                    println!("Invalid command.");
                 }
             }
 
@@ -969,7 +972,7 @@ impl Game {
                     .filter_map(|t| t.parse::<usize>().ok())
                     .collect();
                 if idxs.is_empty() || idxs.iter().any(|&i| i == 0 || i > 5) {
-                    println!("Invalid option.");
+                    println!("Invalid command.");
                     continue;
                 }
                 for i in idxs.iter_mut() {
