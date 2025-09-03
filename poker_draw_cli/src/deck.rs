@@ -1,6 +1,6 @@
 // filepath: /workspaces/rustler/poker_draw_cli/src/deck.rs
-use rand::{seq::SliceRandom, thread_rng};
 use crate::card::{Card, Rank, Suit};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
 pub struct Deck {
@@ -16,8 +16,18 @@ impl Deck {
                 cards.push(Card { rank: r, suit: s });
             }
         }
-        let mut rng = thread_rng();
-        cards.shuffle(&mut rng);
+        // Shuffle using a simple LCG-based algorithm so we don't rely on external crates.
+        // This isn't cryptographically secure but suffices for card shuffling in the CLI.
+        let mut seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64;
+        // Fisher-Yates shuffle
+        for i in (1..cards.len()).rev() {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let j = (seed % (i as u64 + 1)) as usize;
+            cards.swap(i, j);
+        }
         Self { cards }
     }
 

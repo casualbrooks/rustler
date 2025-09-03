@@ -4,6 +4,7 @@ mod hand;
 mod player;
 mod timer;
 mod game;
+mod logger;
 
 use game::{Game, GameSettings};
 use timer::read_line_timeout;
@@ -48,6 +49,11 @@ fn main() {
 
         let winner = game.play_until_winner();
         println!("Winner: {}", winner.name);
+
+        // After the game ends, dump logs for review
+        // (both the public timeline and each player's private cards)
+        game.logger.dump();
+        game.logger.dump_private();
 
         println!("Start a new game with same settings? [y/N]");
         let again = read_line_timeout("> ", 0).unwrap_or_default();
