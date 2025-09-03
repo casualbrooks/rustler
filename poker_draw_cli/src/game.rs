@@ -147,6 +147,7 @@ impl Game {
                 "{} wins {} chips as all others folded.",
                 self.players[winner].name, pot
             );
+            self.offer_reveal(winner);
             for p in self.players.iter_mut() {
                 p.hand = None;
             }
@@ -175,6 +176,7 @@ impl Game {
                 "{} wins {} chips as all others folded.",
                 self.players[winner].name, pot
             );
+            self.offer_reveal(winner);
             for p in self.players.iter_mut() {
                 p.hand = None;
             }
@@ -269,6 +271,17 @@ impl Game {
         (i + 1) % self.players.len()
     }
 
+    fn offer_reveal(&self, pid: usize) {
+        println!("Reveal your cards? [y/N]");
+        if let Some(ans) = read_line_timeout("> ", self.settings.turn_timeout_secs) {
+            if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
+                if let Some(h) = self.players[pid].hand.as_ref() {
+                    println!("{} reveals [{}]", self.players[pid].name, h.fmt_inline());
+                }
+            }
+        }
+    }
+
     fn handle_player_quit(&mut self, pid: usize) {
         let chips = self.players[pid].chips;
         if chips > 0 {
@@ -283,7 +296,12 @@ impl Game {
                 let share = chips / recipients.len() as u32;
                 let mut rem = chips % recipients.len() as u32;
                 for &i in &recipients {
-                    let extra = if rem > 0 { rem -= 1; 1 } else { 0 };
+                    let extra = if rem > 0 {
+                        rem -= 1;
+                        1
+                    } else {
+                        0
+                    };
                     self.players[i].chips += share + extra;
                 }
             }
@@ -349,6 +367,17 @@ impl Game {
 
             let call_diff = current_bet.saturating_sub(self.players[pid].contributed_this_round);
 
+            let chips_after_call = self.players[pid].chips.saturating_sub(call_diff);
+            let others_can_call_more = self
+                .players
+                .iter()
+                .enumerate()
+                .filter(|(i, p)| {
+                    order.contains(i) && *i != pid && !p.folded && !p.all_in && p.chips > 0
+                })
+                .any(|(_, p)| p.chips + p.contributed_this_round > current_bet);
+            let can_raise = chips_after_call >= self.settings.min_bet && others_can_call_more;
+
             let total_pot = pot
                 + self
                     .players
@@ -366,8 +395,19 @@ impl Game {
                 .iter()
                 .filter(|p| p.folded && p.hand.is_some())
                 .map(|p| {
-                    if p.revealed_on_fold {
-                        let hand_str = p.hand.as_ref().map(|h| h.fmt_inline()).unwrap_or_default();
+                    if !p.revealed_on_fold.is_empty() {
+                        let hand_str = p
+                            .hand
+                            .as_ref()
+                            .map(|h| {
+                                p.revealed_on_fold
+                                    .iter()
+                                    .filter_map(|&i| h.cards.get(i))
+                                    .map(|c| c.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            })
+                            .unwrap_or_default();
                         format!("{} [{}]", p.name, hand_str)
                     } else {
                         p.name.clone()
@@ -390,16 +430,28 @@ impl Game {
             let choice: u32;
             let mut amount: u32 = 0;
             let mut player_left = false;
+            let mut timed_out = false;
+            let mut reveal_idxs: Vec<usize> = Vec::new();
             loop {
+                timed_out = false;
                 if current_bet == self.players[pid].contributed_this_round {
-                    println!(
-                        "Actions: [0] Check  [1] Bet <amt>=min {}  [2] Fold  [3] All-in  [4] View cards",
-                        self.settings.min_bet
-                    );
-                } else {
+                    if can_raise {
+                        println!(
+                            "Actions: [0] Check  [1] Bet <amt>=min {}  [2] Fold  [3] All-in  [4] View cards",
+                            self.settings.min_bet
+                        );
+                    } else {
+                        println!("Actions: [0] Check  [2] Fold  [3] All-in  [4] View cards");
+                    }
+                } else if can_raise {
                     println!(
                         "Actions: [0] Call {}  [1] Raise <amt>=min {}  [2] Fold  [3] All-in  [4] View cards",
                         call_diff, self.settings.min_bet
+                    );
+                } else {
+                    println!(
+                        "Actions: [0] Call {}  [2] Fold  [3] All-in  [4] View cards",
+                        call_diff
                     );
                 }
                 println!("Type action number (and amount if needed). Type 'quit' to fold and leave game or 'exit' to quit program.");
@@ -408,8 +460,14 @@ impl Game {
                 } else {
                     format!("(call {} chips) > ", call_diff)
                 };
-                let line =
-                    read_line_timeout(&prompt, self.settings.turn_timeout_secs).unwrap_or_default();
+                let line_opt = read_line_timeout(&prompt, self.settings.turn_timeout_secs);
+                let line = match line_opt {
+                    Some(l) => l,
+                    None => {
+                        timed_out = true;
+                        String::new()
+                    }
+                };
                 let s = line.trim().to_lowercase();
                 if s == "exit" {
                     println!("Are you sure you want to exit? [y/N]");
@@ -436,13 +494,18 @@ impl Game {
                         continue;
                     }
                 }
-                if s.is_empty() {
-                    choice = 2; // timeout -> fold
+                if timed_out || s.is_empty() {
+                    timed_out = true;
+                    choice = 2;
                     break;
                 }
                 let mut parts = s.split_whitespace();
                 if let Some(cstr) = parts.next() {
                     if let Ok(c) = cstr.parse::<u32>() {
+                        if c == 1 && !can_raise {
+                            println!("Invalid option.");
+                            continue;
+                        }
                         match c {
                             0 => {
                                 choice = 0;
@@ -459,6 +522,12 @@ impl Game {
                                 println!("Need an amount for that action.");
                             }
                             2 => {
+                                reveal_idxs = parts
+                                    .filter_map(|p| p.parse::<usize>().ok())
+                                    .filter(|&i| i < 5)
+                                    .collect();
+                                reveal_idxs.sort_unstable();
+                                reveal_idxs.dedup();
                                 choice = 2;
                                 break;
                             }
@@ -492,13 +561,25 @@ impl Game {
             if choice == 2 {
                 self.players[pid].folded = true;
                 self.players[pid].last_action = "folded".to_string();
-                println!("{} folds.", self.players[pid].name);
-                println!("Reveal your cards? [y/N]");
-                let ans = read_line_timeout("> ", 0).unwrap_or_default();
-                if matches!(ans.trim().to_lowercase().as_str(), "y" | "yes") {
-                    self.players[pid].revealed_on_fold = true;
-                    if let Some(h) = self.players[pid].hand.as_ref() {
-                        println!("Folded hand: [{}]", h.fmt_inline());
+                self.players[pid].revealed_on_fold = reveal_idxs.clone();
+                if timed_out {
+                    println!("{} folds (timeout).", self.players[pid].name);
+                } else {
+                    println!("{} folds.", self.players[pid].name);
+                    if !reveal_idxs.is_empty() {
+                        let hand_str = self.players[pid]
+                            .hand
+                            .as_ref()
+                            .map(|h| {
+                                reveal_idxs
+                                    .iter()
+                                    .filter_map(|&i| h.cards.get(i))
+                                    .map(|c| c.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            })
+                            .unwrap_or_default();
+                        println!("Shows: [{}]", hand_str);
                     }
                 }
             } else if choice == 0 && current_bet == self.players[pid].contributed_this_round {
@@ -633,6 +714,16 @@ impl Game {
                 }
             }
 
+            let active_remaining = self
+                .players
+                .iter()
+                .filter(|p| !p.folded && p.hand.is_some())
+                .count();
+            if active_remaining <= 1 {
+                seen_since_raise[pid] = true;
+                break;
+            }
+
             seen_since_raise[pid] = true;
             idx = (idx + 1) % order.len();
         }
@@ -662,8 +753,19 @@ impl Game {
                 .iter()
                 .filter(|p| p.folded && p.hand.is_some())
                 .map(|p| {
-                    if p.revealed_on_fold {
-                        let hand_str = p.hand.as_ref().map(|h| h.fmt_inline()).unwrap_or_default();
+                    if !p.revealed_on_fold.is_empty() {
+                        let hand_str = p
+                            .hand
+                            .as_ref()
+                            .map(|h| {
+                                p.revealed_on_fold
+                                    .iter()
+                                    .filter_map(|&i| h.cards.get(i))
+                                    .map(|c| c.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            })
+                            .unwrap_or_default();
                         format!("{} [{}]", p.name, hand_str)
                     } else {
                         p.name.clone()
@@ -685,8 +787,16 @@ impl Game {
                     "Enter indices to discard (0-4, space-separated), 'stand', or 'view'. Type 'quit' to fold and leave game or 'exit' to quit program. You have {} seconds.",
                     self.settings.turn_timeout_secs
                 );
-                let line = read_line_timeout("> ", self.settings.turn_timeout_secs)
-                    .unwrap_or_else(|| "stand".to_string());
+                let line_opt = read_line_timeout("> ", self.settings.turn_timeout_secs);
+                let line = match line_opt {
+                    Some(l) => l,
+                    None => {
+                        self.players[pid].folded = true;
+                        self.players[pid].last_action = "folded".to_string();
+                        println!("{} folds (timeout).", pname);
+                        break;
+                    }
+                };
                 let s = line.trim().to_lowercase();
 
                 if s == "exit" {
