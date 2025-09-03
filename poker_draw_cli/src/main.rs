@@ -59,6 +59,8 @@ fn main() {
         println!("Winner: {}", winner.name);
 
         // After the game ends, dump logs for review
+
+        // (both the public timeline and each player's private cards)
         game.logger.dump();
         game.logger.dump_private();
 
