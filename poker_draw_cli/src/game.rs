@@ -80,6 +80,7 @@ impl Game {
     }
 
     pub fn play_hand(&mut self) {
+        clear_screen();
         let mut deck = Deck::new_shuffled();
         // reset per-player state
         for p in self.players.iter_mut() {
