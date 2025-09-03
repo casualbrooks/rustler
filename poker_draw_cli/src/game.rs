@@ -817,7 +817,7 @@ impl Game {
             let mut player_left = false;
             loop {
                 println!(
-                    "Enter indices to discard (0-4, space-separated), 'stand', or 'view hand'. Type 'quit' to fold and leave game or 'exit' to quit program. You have {} seconds.",
+                    "Enter card numbers to discard (1-5, space-separated) or 'stand'. Type 0 to view hand. Type 'quit' to fold and leave game or 'exit' to quit program. You have {} seconds.",
                     self.settings.turn_timeout_secs
                 );
                 let line_opt = read_line_timeout("> ", self.settings.turn_timeout_secs);
@@ -856,8 +856,7 @@ impl Game {
                     }
                 }
 
-                if s == "view hand" {
-
+                if s == "0" {
                     if let Some(h) = self.players[pid].hand.as_ref() {
                         println!("Hand: [{}]", h.fmt_inline());
                     }
@@ -873,9 +872,14 @@ impl Game {
                     .split_whitespace()
                     .filter_map(|t| t.parse::<usize>().ok())
                     .collect();
-                if idxs.is_empty() {
+                if idxs.is_empty()
+                    || idxs.iter().any(|&i| i == 0 || i > 5)
+                {
                     println!("Invalid option.");
                     continue;
+                }
+                for i in idxs.iter_mut() {
+                    *i -= 1;
                 }
                 if idxs.len() > self.settings.max_discards {
                     idxs.truncate(self.settings.max_discards);
