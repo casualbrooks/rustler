@@ -255,7 +255,12 @@ impl Game {
                     println!("Actions: [0] Call {}  [1] Raise <amt>=min {}  [2] Fold  [3] All-in", call_diff, min_bet);
                 }
                 println!("Type action number (and amount if needed). Type 'quit' to exit.");
-                let line = read_line_timeout("> ", self.settings.turn_timeout_secs).unwrap_or_default();
+                let prompt = if current_bet == self.players[pid].contributed_this_round {
+                    "> ".to_string()
+                } else {
+                    format!("(call {} chips) > ", call_diff)
+                };
+                let line = read_line_timeout(&prompt, self.settings.turn_timeout_secs).unwrap_or_default();
                 let s = line.trim().to_lowercase();
                 if s == "quit" || s == "exit" {
                     println!("Are you sure you want to quit? [y/N]");
@@ -381,6 +386,7 @@ impl Game {
                         seen_since_raise.fill(false);
                     }
                     self.players[pid].last_action = format!("all-in {}", to_put);
+
                 } else if raise_amt < self.settings.min_bet {
                     println!("Invalid raise. Minimum is {}.", self.settings.min_bet);
                     self.players[pid].folded = true;
