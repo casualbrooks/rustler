@@ -220,7 +220,21 @@ impl Game {
         self.draw_phase(&mut deck);
 
         // Second betting round
-        pot += self.betting_round("Second betting round", &mut deck);
+        let remaining_active: Vec<usize> = self
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| !p.folded && p.hand.is_some())
+            .map(|(i, _)| i)
+            .collect();
+        let any_chips_left = remaining_active
+            .iter()
+            .any(|&pid| self.players[pid].chips > 0);
+        if any_chips_left {
+            pot += self.betting_round("Second betting round", &mut deck);
+        } else {
+            println!("Skipping second betting round as all players are all-in.");
+        }
 
         // Check again after the second round for a single remaining player
         let remaining: Vec<usize> = self
@@ -947,8 +961,10 @@ impl Game {
             "--- Draw phase (up to {} cards) ---",
             self.settings.max_discards
         );
-        for pid in self.seat_order_from(self.next_seat(self.dealer)) {
-            if self.players[pid].folded || self.players[pid].all_in {
+        let start = self.next_seat(self.dealer);
+        for offset in 0..self.players.len() {
+            let pid = (start + offset) % self.players.len();
+            if self.players[pid].folded || self.players[pid].hand.is_none() {
                 continue;
             }
             clear_screen();
